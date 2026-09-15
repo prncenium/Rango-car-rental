@@ -2,8 +2,12 @@ node_modules/
 dist/
 build/
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 *.log
 .DS_Store
 Thumbs.db
+.vscode/
+.idea/
+*.tsbuildinfo
+coverage/
