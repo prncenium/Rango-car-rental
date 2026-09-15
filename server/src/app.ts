@@ -5,6 +5,7 @@ import { env } from './config/env.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { requestContext } from './middleware/requestContext.js';
 import { requireAdmin, requireAuth } from './middleware/auth.js';
+import { authRoutes } from './routes/auth.routes.js';
 import { adminCarRoutes } from './routes/admin.car.routes.js';
 import { adminBookingRoutes } from './routes/admin.booking.routes.js';
 import { adminUserRoutes } from './routes/admin.user.routes.js';
@@ -34,7 +35,12 @@ export function createApp(): Express {
   // spec 02 §9). No auth middleware — this is the one namespace with none.
   app.use('/api/public/cars', publicCarRoutes);
 
-  // Route modules mount here as later blocks add them (AUTH, CAR, BOOK, ...).
+  // /api/auth: register, login, refresh, logout, me. Mounted ahead of
+  // /api/user and /api/admin (AUTH-09) — none of its own routes carry
+  // requireAuth except GET /me, which gates itself.
+  app.use('/api/auth', authRoutes);
+
+  // Route modules mount here as later blocks add them (CAR, BOOK, ...).
   // /api/admin: every route requires an active ADMIN/SUPER_ADMIN actor
   // (AUTHZ-1/2, design D11) — requireAuth populates req.actor, requireAdmin
   // narrows the role.

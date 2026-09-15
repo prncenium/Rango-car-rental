@@ -8,3 +8,6 @@ process.env.CLIENT_ORIGIN ??= 'http://localhost:5173';
 process.env.JWT_ACCESS_SECRET ??= 'test-access-secret-0000000000000000';
 process.env.JWT_REFRESH_SECRET ??= 'test-refresh-secret-0000000000000000';
 process.env.MONGODB_URI ??= 'mongodb://127.0.0.1:27017/rango-test-placeholder';
+process.env.CLOUDINARY_CLOUD_NAME ??= 'test-cloud';
+process.env.CLOUDINARY_API_KEY ??= 'test-api-key';
+process.env.CLOUDINARY_API_SECRET ??= 'test-api-secret';
