@@ -6,6 +6,8 @@ import { AuditLog } from '../models/AuditLog.model.js';
 import { transition } from '../transitions/transition.js';
 import { carRegistry } from '../transitions/registry.js';
 import { runGuards } from '../transitions/runGuards.js';
+import { getMaxImagesPerCar } from '../lib/systemConfig.js';
+import { uploadCarImage } from '../lib/imageUpload.js';
 import {
   guardEditableModerationState,
   guardNeverModerated,
@@ -131,6 +133,72 @@ export async function updateListing(carId: string, actor: ActorContext, input: U
             entityType: 'CAR',
             entityId: car._id,
             metadata: { changedFields: Object.keys(input) },
+            ipAddress: actor.ip,
+          },
+        ],
+        { session },
+      );
+
+      result = car;
+    });
+    return result;
+  } finally {
+    await session.endSession();
+  }
+}
+
+export interface UploadedImageFile {
+  buffer: Buffer;
+  mimetype: string;
+}
+
+// docs/design/02-image-storage.md — multipart photo upload. Gated by the same
+// guardEditableModerationState as updateListing (DRAFT/REJECTED only), since
+// images are content, not a status field, and a live listing's content must
+// not change without an admin seeing the result again (D2 re-moderation
+// intent). Cloudinary calls happen outside any Mongo transaction — an
+// external network call has no business holding a transaction's locks open.
+export async function addListingImages(carId: string, actor: ActorContext, files: UploadedImageFile[]): Promise<CarE> {
+  if (files.length === 0) {
+    throw new ValidationError('At least one image file is required.', { source: 'body', fieldErrors: { images: ['required'] } });
+  }
+
+  const preCheckSession = await mongoose.startSession();
+  try {
+    const car = await loadOwnCarOrThrow(carId, actor, preCheckSession);
+    await runGuards([guardEditableModerationState], car, actor, preCheckSession);
+    const maxImages = await getMaxImagesPerCar(preCheckSession);
+    if (car.images.length + files.length > maxImages) {
+      throw new ValidationError(`A car may have at most ${maxImages} images (it already has ${car.images.length}).`, {
+        source: 'body',
+        fieldErrors: { images: [`at most ${maxImages} images allowed`] },
+      });
+    }
+  } finally {
+    await preCheckSession.endSession();
+  }
+
+  const uploadedUrls = await Promise.all(files.map((f) => uploadCarImage(f.buffer, carId)));
+
+  const session = await mongoose.startSession();
+  try {
+    let result!: CarE;
+    await session.withTransaction(async () => {
+      const car = await loadOwnCarOrThrow(carId, actor, session);
+      await runGuards([guardEditableModerationState], car, actor, session);
+
+      car.images.push(...uploadedUrls);
+      await car.save({ session });
+
+      await AuditLog.create(
+        [
+          {
+            actor: actor.userId,
+            actorRole: actor.role,
+            action: 'CAR_EDITED',
+            entityType: 'CAR',
+            entityId: car._id,
+            metadata: { changedFields: ['images'], addedCount: uploadedUrls.length },
             ipAddress: actor.ip,
           },
         ],

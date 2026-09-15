@@ -1,7 +1,10 @@
-import { Router } from 'express';
+import { Router, type NextFunction, type Request, type Response } from 'express';
+import multer from 'multer';
 import { z } from 'zod';
 import { CAR_FUEL_TYPES, CAR_LISTING_STATES, CAR_MODERATION_STATUSES, CAR_TRANSMISSIONS, objectIdSchema } from '@rango/shared';
-import { createListing, deleteListing, listOwnListings, updateListing } from '../services/car.service.js';
+import { addListingImages, createListing, deleteListing, listOwnListings, updateListing } from '../services/car.service.js';
+import { carImageUpload } from '../lib/imageUpload.js';
+import { PayloadTooLargeError, ValidationError } from '../lib/errors.js';
 
 const router = Router();
 
@@ -103,6 +106,45 @@ router.patch('/:carId', async (req, res, next) => {
     const { carId } = carIdParams.parse(req.params);
     const body = updateListingBody.parse(req.body);
     const car = await updateListing(carId, req.actor!, body);
+    res.status(200).json({ data: car });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// multer's own errors (size/count limits) arrive as `MulterError`, not our
+// DomainError hierarchy — translated here so the error middleware (design
+// §10.3) never has to special-case a third-party error type. A fileFilter
+// rejection (wrong MIME type) already throws UnsupportedMediaTypeError
+// directly, which passes through the `else` branch unchanged.
+function multipartCarImages(req: Request, res: Response, next: NextFunction): void {
+  carImageUpload.array('images')(req, res, (err: unknown) => {
+    if (!err) {
+      next();
+      return;
+    }
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        next(new PayloadTooLargeError('Each image must be 5MB or smaller.'));
+        return;
+      }
+      next(new ValidationError(`Invalid image upload: ${err.message}`, { source: 'body', fieldErrors: { images: [err.message] } }));
+      return;
+    }
+    next(err);
+  });
+}
+
+// docs/design/02-image-storage.md — POST /api/user/listings/:carId/images
+router.post('/:carId/images', multipartCarImages, async (req, res, next) => {
+  try {
+    const { carId } = carIdParams.parse(req.params);
+    const files = (req.files as Express.Multer.File[] | undefined) ?? [];
+    const car = await addListingImages(
+      carId,
+      req.actor!,
+      files.map((f) => ({ buffer: f.buffer, mimetype: f.mimetype })),
+    );
     res.status(200).json({ data: car });
   } catch (err) {
     next(err);

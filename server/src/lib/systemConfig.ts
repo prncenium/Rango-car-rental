@@ -16,3 +16,10 @@ export async function getBookingConfig(session: ClientSession): Promise<SystemCo
   const config = await SystemConfig.findById('singleton').session(session).lean();
   return config?.booking ?? DEFAULT_BOOKING_CONFIG;
 }
+
+const DEFAULT_MAX_IMAGES_PER_CAR = 12;
+
+export async function getMaxImagesPerCar(session: ClientSession): Promise<number> {
+  const config = await SystemConfig.findById('singleton').session(session).lean();
+  return config?.listing.maxImagesPerCar ?? DEFAULT_MAX_IMAGES_PER_CAR;
+}

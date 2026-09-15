@@ -15,6 +15,10 @@ const envSchema = z
     JWT_ACCESS_SECRET: z.string().min(32, 'JWT_ACCESS_SECRET must be at least 32 bytes'),
     JWT_REFRESH_SECRET: z.string().min(32, 'JWT_REFRESH_SECRET must be at least 32 bytes'),
     JWT_ACCESS_SECRET_PREVIOUS: z.string().min(32).optional(),
+    // design docs/design/02-image-storage.md — car photo upload backend.
+    CLOUDINARY_CLOUD_NAME: z.string().min(1, 'CLOUDINARY_CLOUD_NAME is required'),
+    CLOUDINARY_API_KEY: z.string().min(1, 'CLOUDINARY_API_KEY is required'),
+    CLOUDINARY_API_SECRET: z.string().min(1, 'CLOUDINARY_API_SECRET is required'),
   })
   .superRefine((val, ctx) => {
     if (val.JWT_ACCESS_SECRET === val.JWT_REFRESH_SECRET) {
