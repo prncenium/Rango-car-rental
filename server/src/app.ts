@@ -8,6 +8,7 @@ import { requireAdmin, requireAuth } from './middleware/auth.js';
 import { authRoutes } from './routes/auth.routes.js';
 import { adminCarRoutes } from './routes/admin.car.routes.js';
 import { adminBookingRoutes } from './routes/admin.booking.routes.js';
+import { adminPaymentRoutes } from './routes/admin.payment.routes.js';
 import { adminUserRoutes } from './routes/admin.user.routes.js';
 import { adminAuditRoutes } from './routes/admin.audit.routes.js';
 import { adminQueueRoutes } from './routes/admin.queue.routes.js';
@@ -46,6 +47,7 @@ export function createApp(): Express {
   // narrows the role.
   app.use('/api/admin/listings', requireAuth, requireAdmin, adminCarRoutes);
   app.use('/api/admin/bookings', requireAuth, requireAdmin, adminBookingRoutes);
+  app.use('/api/admin/payments', requireAuth, requireAdmin, adminPaymentRoutes);
   app.use('/api/admin/users', requireAuth, requireAdmin, adminUserRoutes);
   app.use('/api/admin/audit', requireAuth, requireAdmin, adminAuditRoutes);
   app.use('/api/admin/dashboard', requireAuth, requireAdmin, adminQueueRoutes);

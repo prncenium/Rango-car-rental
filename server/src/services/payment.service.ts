@@ -1,4 +1,4 @@
-import mongoose, { type ClientSession, type HydratedDocument } from 'mongoose';
+import mongoose, { type ClientSession, type FilterQuery, type HydratedDocument } from 'mongoose';
 import type { PaymentMethod, PaymentPurpose } from '@rango/shared';
 import type { ActorContext } from '../lib/actor.js';
 import { NotFoundError, ValidationError } from '../lib/errors.js';
@@ -101,4 +101,44 @@ export async function confirmOfflinePayment(
   } finally {
     await session.endSession();
   }
+}
+
+export interface AdminListPaymentsQuery {
+  page?: number | undefined;
+  limit?: number | undefined;
+  booking?: string | undefined;
+  direction?: string | undefined;
+  status?: string | undefined;
+  purpose?: string | undefined;
+}
+
+const PAYMENTS_SORT: Record<string, 1 | -1> = { createdAt: -1 };
+
+// ADM-05 — admin-only, filterable on booking/direction/status/purpose. No
+// write path here: this block is read-only, per the task scope (record/
+// settle/void/refund are PAY-FIX territory, not touched here).
+export async function adminListPayments(query: AdminListPaymentsQuery) {
+  const page = query.page && query.page >= 1 ? query.page : 1;
+  const limit = query.limit && query.limit >= 1 && query.limit <= 100 ? query.limit : 20;
+
+  const filter: FilterQuery<PaymentDoc> = {};
+  if (query.booking) filter.booking = query.booking as unknown as PaymentDoc['booking'];
+  if (query.direction) filter.direction = query.direction as PaymentDoc['direction'];
+  if (query.status) filter.status = query.status as PaymentDoc['status'];
+  if (query.purpose) filter.purpose = query.purpose as PaymentDoc['purpose'];
+
+  const [data, total] = await Promise.all([
+    Payment.find(filter)
+      .sort({ ...PAYMENTS_SORT, _id: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .populate('recordedBy', 'name email')
+      .lean(),
+    Payment.countDocuments(filter),
+  ]);
+
+  return {
+    data,
+    meta: { page, limit, total, totalPages: Math.ceil(total / limit), hasNext: page * limit < total, sort: 'createdAt:desc' },
+  };
 }

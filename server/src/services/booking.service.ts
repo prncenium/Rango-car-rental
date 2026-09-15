@@ -4,6 +4,8 @@ import { isAdminActor } from '../lib/actor.js';
 import { ForbiddenTransitionError, GuardFailedError, InvalidTransitionError, NotFoundError, ValidationError } from '../lib/errors.js';
 import { Booking, type BookingDoc } from '../models/Booking.model.js';
 import { Car } from '../models/Car.model.js';
+import { Payment } from '../models/Payment.model.js';
+import { BookingDayLock } from '../models/BookingDayLock.model.js';
 import { AuditLog } from '../models/AuditLog.model.js';
 import { insertBookingLocks, releaseBookingLocks } from '../lib/dayLocks.js';
 import { toUtcMidnight } from '../lib/dayLocks.js';
@@ -463,6 +465,125 @@ export async function cancelOwnBookingRequest(
   } finally {
     await session.endSession();
   }
+}
+
+// ADM-04 — admin has no ownership scope: any booking is readable. "Stale" has
+// no SystemConfig field of its own (D12 doesn't name one), so a fixed
+// threshold is used here, same pattern as the DEFAULT_* fallbacks in
+// lib/systemConfig.ts.
+const STALE_REQUEST_DAYS = 3;
+
+export interface AdminListBookingsQuery {
+  page?: number | undefined;
+  limit?: number | undefined;
+  sort?: string | undefined;
+  status?: string[] | undefined;
+  car?: string | undefined;
+  renter?: string | undefined;
+  owner?: string | undefined;
+  startDateFrom?: string | undefined;
+  startDateTo?: string | undefined;
+  unpaidOnly?: boolean | undefined;
+  overdueOnly?: boolean | undefined;
+  staleOnly?: boolean | undefined;
+  conflictedOnly?: boolean | undefined;
+}
+
+export async function adminListBookings(query: AdminListBookingsQuery) {
+  const page = query.page && query.page >= 1 ? query.page : 1;
+  const limit = query.limit && query.limit >= 1 && query.limit <= 100 ? query.limit : 20;
+  const sortKey = query.sort && BOOKINGS_SORT_WHITELIST[query.sort] ? query.sort : 'createdAt:desc';
+  const today = toUtcMidnight(new Date());
+
+  const filter: FilterQuery<BookingDoc> = {};
+  if (query.status?.length) {
+    filter.status = { $in: query.status as BookingDoc['status'][] };
+  }
+  if (query.car) filter.car = query.car as unknown as BookingDoc['car'];
+  if (query.renter) filter.renter = query.renter as unknown as BookingDoc['renter'];
+  if (query.owner) filter.owner = query.owner as unknown as BookingDoc['owner'];
+  if (query.startDateFrom || query.startDateTo) {
+    filter.startDate = {};
+    if (query.startDateFrom) filter.startDate.$gte = new Date(query.startDateFrom);
+    if (query.startDateTo) filter.startDate.$lt = new Date(query.startDateTo);
+  }
+  if (query.unpaidOnly) {
+    filter.status = 'CONFIRMED';
+    filter.$expr = { $lt: ['$amountReceived', '$totalAmount'] };
+  }
+  if (query.overdueOnly) {
+    filter.status = 'ACTIVE';
+    filter.endDate = { $lt: today };
+  }
+  if (query.staleOnly) {
+    filter.status = 'REQUESTED';
+    filter.createdAt = { $lt: new Date(today.getTime() - STALE_REQUEST_DAYS * 86_400_000) };
+  }
+
+  if (query.conflictedOnly) {
+    // A REQUESTED booking is "conflicted" when another non-terminal booking
+    // on the same car overlaps its dates (spec 01 §1.4's queuing model: more
+    // than one REQUESTED/CONFIRMED booking can exist for the same days,
+    // admin picks one to confirm and must reject/cancel the rest).
+    const candidates = await Booking.find({ status: 'REQUESTED' }).select('_id car startDate endDate').lean();
+    const conflictedIds: string[] = [];
+    for (const candidate of candidates) {
+      const overlap = await Booking.exists({
+        _id: { $ne: candidate._id },
+        car: candidate.car,
+        status: { $in: ['REQUESTED', 'CONFIRMED', 'ACTIVE', 'CANCELLATION_REQUESTED'] },
+        startDate: { $lt: candidate.endDate },
+        endDate: { $gt: candidate.startDate },
+      });
+      if (overlap) conflictedIds.push(String(candidate._id));
+    }
+    filter._id = { $in: conflictedIds } as unknown as FilterQuery<BookingDoc>['_id'];
+  }
+
+  const [data, total] = await Promise.all([
+    Booking.find(filter)
+      .sort({ ...BOOKINGS_SORT_WHITELIST[sortKey], _id: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .populate('renter', 'name email phone')
+      .populate('owner', 'name email phone')
+      .populate('car', 'make model registrationNumber')
+      .lean(),
+    Booking.countDocuments(filter),
+  ]);
+
+  return {
+    data,
+    meta: { page, limit, total, totalPages: Math.ceil(total / limit), hasNext: page * limit < total, sort: sortKey },
+  };
+}
+
+// ADM-04 — AdminBookingDetail: both parties in full, payments[], and a
+// day-lock summary. No ownership scope — any booking is readable by an admin.
+export async function adminGetBookingDetail(bookingId: string) {
+  const booking = await Booking.findById(bookingId)
+    .populate('renter', 'name email phone drivingLicence')
+    .populate('owner', 'name email phone')
+    .populate('car', 'make model registrationNumber location')
+    .lean();
+  if (!booking) {
+    throw new NotFoundError('Booking not found.');
+  }
+
+  const [payments, dayLocks] = await Promise.all([
+    Payment.find({ booking: booking._id }).sort({ createdAt: 1 }).lean(),
+    BookingDayLock.find({ booking: booking._id }).sort({ day: 1 }).select('day source').lean(),
+  ]);
+
+  return {
+    ...booking,
+    payments,
+    dayLocks: {
+      count: dayLocks.length,
+      from: dayLocks[0]?.day ?? null,
+      to: dayLocks[dayLocks.length - 1]?.day ?? null,
+    },
+  };
 }
 
 export interface ListOwnBookingsQuery {

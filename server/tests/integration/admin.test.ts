@@ -363,6 +363,116 @@ describe('Admin endpoints (CAR/BOOK/PAY/ADM)', () => {
     });
   });
 
+  describe('Admin listing read endpoints (ADM-03)', () => {
+    it('lists cars across every moderation/listing combination and returns a full detail shape', async () => {
+      const { token: adminToken } = await makeUser('ADMIN');
+      const { user: owner } = await makeUser('USER');
+      const draft = await makeCar(String(owner._id), { moderationStatus: 'DRAFT', listingState: 'UNLISTED' });
+      await makeCar(String(owner._id), { moderationStatus: 'APPROVED', listingState: 'LISTED' });
+
+      const list = await request(app)
+        .get('/api/admin/listings')
+        .query({ moderationStatus: 'DRAFT' })
+        .set('Cookie', [`rgo_at=${adminToken}`]);
+      expect(list.status).toBe(200);
+      expect(list.body.data.some((c: { _id: string }) => c._id === String(draft._id))).toBe(true);
+
+      const detail = await request(app)
+        .get(`/api/admin/listings/${draft._id}`)
+        .set('Cookie', [`rgo_at=${adminToken}`]);
+      expect(detail.status).toBe(200);
+      expect(detail.body.data.owner.email).toBe(owner.email);
+      expect(detail.body.data).toHaveProperty('lockedDayCount');
+      expect(detail.body.data.activeBookingId).toBeNull();
+
+      const missing = await request(app)
+        .get(`/api/admin/listings/${owner._id}`)
+        .set('Cookie', [`rgo_at=${adminToken}`]);
+      expect(missing.status).toBe(404);
+    });
+  });
+
+  describe('Admin booking read endpoints (ADM-04)', () => {
+    it('lists any booking regardless of party and filters unpaidOnly', async () => {
+      const { token: adminToken } = await makeUser('ADMIN');
+      const { user: owner } = await makeUser('USER');
+      const { user: renter } = await makeUser('USER');
+      const car = await makeCar(String(owner._id), { moderationStatus: 'APPROVED', listingState: 'LISTED' });
+      const booking = await makeBooking(String(car._id), String(renter._id), String(owner._id));
+      await request(app).post(`/api/admin/bookings/${booking._id}/confirm`).set('Cookie', [`rgo_at=${adminToken}`]);
+
+      const unpaid = await request(app)
+        .get('/api/admin/bookings')
+        .query({ unpaidOnly: 'true' })
+        .set('Cookie', [`rgo_at=${adminToken}`]);
+      expect(unpaid.status).toBe(200);
+      expect(unpaid.body.data.some((b: { _id: string }) => b._id === String(booking._id))).toBe(true);
+
+      const detail = await request(app)
+        .get(`/api/admin/bookings/${booking._id}`)
+        .set('Cookie', [`rgo_at=${adminToken}`]);
+      expect(detail.status).toBe(200);
+      expect(detail.body.data.renter.email).toBe(renter.email);
+      expect(detail.body.data.owner.email).toBe(owner.email);
+      expect(detail.body.data.payments).toEqual([]);
+      expect(detail.body.data.dayLocks.count).toBe(3);
+    });
+
+    it('admin cancels a CONFIRMED booking directly (phone-call resolution) with no user-facing request-cancellation route', async () => {
+      const { token: adminToken } = await makeUser('ADMIN');
+      const { user: owner } = await makeUser('USER');
+      const { user: renter, token: renterToken } = await makeUser('USER');
+      const car = await makeCar(String(owner._id), { moderationStatus: 'APPROVED', listingState: 'LISTED' });
+      const booking = await makeBooking(String(car._id), String(renter._id), String(owner._id));
+      await request(app).post(`/api/admin/bookings/${booking._id}/confirm`).set('Cookie', [`rgo_at=${adminToken}`]);
+
+      // The renter's own cancel endpoint only reaches REQUESTED->CANCELLED;
+      // against a CONFIRMED booking it must not silently succeed.
+      const renterAttempt = await request(app)
+        .post(`/api/user/bookings/${booking._id}/cancel`)
+        .set('Cookie', [`rgo_at=${renterToken}`])
+        .send({ reason: 'called to cancel' });
+      expect(renterAttempt.status).toBe(409);
+      expect(renterAttempt.body.error.code).toBe('INVALID_TRANSITION');
+
+      const cancelled = await request(app)
+        .post(`/api/admin/bookings/${booking._id}/cancel`)
+        .set('Cookie', [`rgo_at=${adminToken}`])
+        .send({ reason: 'Renter called to cancel over the phone' });
+      expect(cancelled.status).toBe(200);
+      expect(cancelled.body.data.status).toBe('CANCELLED');
+      expect(await BookingDayLock.countDocuments({ booking: booking._id })).toBe(0);
+    });
+  });
+
+  describe('Admin payment list endpoint (ADM-05)', () => {
+    it('lists payments filtered by booking, direction, status, purpose, admin-only', async () => {
+      const { token: adminToken } = await makeUser('ADMIN');
+      const { user: owner } = await makeUser('USER');
+      const { user: renter, token: renterToken } = await makeUser('USER');
+      const car = await makeCar(String(owner._id), { moderationStatus: 'APPROVED', listingState: 'LISTED' });
+      const booking = await makeBooking(String(car._id), String(renter._id), String(owner._id));
+      await request(app).post(`/api/admin/bookings/${booking._id}/confirm`).set('Cookie', [`rgo_at=${adminToken}`]);
+      await request(app)
+        .post(`/api/admin/bookings/${booking._id}/confirm-offline-payment`)
+        .set('Cookie', [`rgo_at=${adminToken}`])
+        .send({ amount: 3000, paymentMethod: 'CASH', purpose: 'RENTAL' });
+
+      const forbidden = await request(app)
+        .get('/api/admin/payments')
+        .set('Cookie', [`rgo_at=${renterToken}`]);
+      expect(forbidden.status).toBe(403);
+
+      const list = await request(app)
+        .get('/api/admin/payments')
+        .query({ booking: String(booking._id), direction: 'IN', status: 'SETTLED', purpose: 'RENTAL' })
+        .set('Cookie', [`rgo_at=${adminToken}`]);
+      expect(list.status).toBe(200);
+      expect(list.body.data.length).toBe(1);
+      expect(list.body.data[0].amount).toBe(3000);
+    });
+  });
+
   describe('Audit query and dashboard counts', () => {
     it('filters the audit log and reports dashboard counts', async () => {
       const { token: adminToken } = await makeUser('ADMIN');

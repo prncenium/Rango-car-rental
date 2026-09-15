@@ -2,6 +2,8 @@ import mongoose, { type ClientSession, type FilterQuery, type HydratedDocument }
 import type { ActorContext } from '../lib/actor.js';
 import { NotFoundError, ValidationError } from '../lib/errors.js';
 import { Car, type CarDoc } from '../models/Car.model.js';
+import { Booking } from '../models/Booking.model.js';
+import { BookingDayLock } from '../models/BookingDayLock.model.js';
 import { AuditLog } from '../models/AuditLog.model.js';
 import { transition } from '../transitions/transition.js';
 import { carRegistry } from '../transitions/registry.js';
@@ -291,6 +293,79 @@ export async function listOwnListings(actor: ActorContext, query: ListOwnListing
   return {
     data,
     meta: { page, limit, total, totalPages: Math.ceil(total / limit), hasNext: page * limit < total, sort: sortKey },
+  };
+}
+
+export interface AdminListListingsQuery {
+  page?: number | undefined;
+  limit?: number | undefined;
+  sort?: string | undefined;
+  moderationStatus?: string[] | undefined;
+  listingState?: string[] | undefined;
+  owner?: string | undefined;
+  city?: string | undefined;
+}
+
+// ADM-03 — unlike listOwnListings, this is not scoped to any owner: an admin
+// sees every car in every moderation×listing combination, including DRAFT
+// (spec 02 §11 — the admin queue is the one read audience DRAFT is visible
+// to besides the owner, per spec 01's read-visibility matrix).
+export async function adminListListings(query: AdminListListingsQuery) {
+  const page = query.page && query.page >= 1 ? query.page : 1;
+  const limit = query.limit && query.limit >= 1 && query.limit <= 100 ? query.limit : 20;
+  const sortKey = query.sort && LISTINGS_SORT_WHITELIST[query.sort] ? query.sort : 'createdAt:desc';
+
+  const filter: FilterQuery<CarDoc> = {};
+  if (query.moderationStatus?.length) {
+    filter.moderationStatus = { $in: query.moderationStatus as CarDoc['moderationStatus'][] };
+  }
+  if (query.listingState?.length) {
+    filter.listingState = { $in: query.listingState as CarDoc['listingState'][] };
+  }
+  if (query.owner) {
+    filter.owner = query.owner as unknown as CarDoc['owner'];
+  }
+  if (query.city) {
+    filter['location.city'] = query.city;
+  }
+
+  const [data, total] = await Promise.all([
+    Car.find(filter)
+      .sort({ ...LISTINGS_SORT_WHITELIST[sortKey], _id: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .populate('owner', 'name email phone')
+      .lean(),
+    Car.countDocuments(filter),
+  ]);
+
+  return {
+    data,
+    meta: { page, limit, total, totalPages: Math.ceil(total / limit), hasNext: page * limit < total, sort: sortKey },
+  };
+}
+
+// ADM-03 — full AdminCar detail shape: owner populated, plus the
+// booking/lock context an admin needs that a plain Car document doesn't
+// carry (activeBookingId, lockedDayCount) — derived here, never stored on
+// Car (design D2: "Car carries no booking-derived field at all").
+export async function adminGetListing(carId: string) {
+  const car = await Car.findById(carId).populate('owner', 'name email phone').lean();
+  if (!car) {
+    throw new NotFoundError('Car not found.');
+  }
+
+  const [activeBooking, lockedDayCount] = await Promise.all([
+    Booking.findOne({ car: car._id, status: { $in: ['CONFIRMED', 'ACTIVE', 'CANCELLATION_REQUESTED'] } })
+      .select('_id status startDate endDate')
+      .lean(),
+    BookingDayLock.countDocuments({ car: car._id }),
+  ]);
+
+  return {
+    ...car,
+    activeBookingId: activeBooking?._id ?? null,
+    lockedDayCount,
   };
 }
 

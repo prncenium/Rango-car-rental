@@ -1,8 +1,10 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { objectIdSchema, PAYMENT_METHODS, PAYMENT_PURPOSES } from '@rango/shared';
+import { BOOKING_STATUSES, objectIdSchema, PAYMENT_METHODS, PAYMENT_PURPOSES } from '@rango/shared';
 import {
   activateBooking,
+  adminGetBookingDetail,
+  adminListBookings,
   cancelBooking,
   completeBooking,
   confirmBooking,
@@ -15,6 +17,48 @@ const router = Router();
 
 const bookingIdParams = z.object({ bookingId: objectIdSchema });
 const reasonBody = z.strictObject({ reason: z.string().min(1).max(500) });
+
+// ADM-04 — admin read endpoints. No ownership scope: any booking is
+// readable, plus the conflictedOnly/staleOnly/overdueOnly/unpaidOnly filters
+// spec 04 §1.4/§2.3 names for the admin queue.
+const listQuery = z.strictObject({
+  page: z.coerce.number().int().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+  sort: z.enum(['createdAt:desc', 'startDate:asc', 'startDate:desc']).optional(),
+  status: z
+    .union([z.enum(BOOKING_STATUSES), z.array(z.enum(BOOKING_STATUSES))])
+    .optional()
+    .transform((v) => (v === undefined ? undefined : Array.isArray(v) ? v : [v])),
+  car: objectIdSchema.optional(),
+  renter: objectIdSchema.optional(),
+  owner: objectIdSchema.optional(),
+  startDateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  startDateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  unpaidOnly: z.coerce.boolean().optional(),
+  overdueOnly: z.coerce.boolean().optional(),
+  staleOnly: z.coerce.boolean().optional(),
+  conflictedOnly: z.coerce.boolean().optional(),
+});
+
+router.get('/', async (req, res, next) => {
+  try {
+    const query = listQuery.parse(req.query);
+    const result = await adminListBookings(query);
+    res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/:bookingId', async (req, res, next) => {
+  try {
+    const { bookingId } = bookingIdParams.parse(req.params);
+    const booking = await adminGetBookingDetail(bookingId);
+    res.status(200).json({ data: booking });
+  } catch (err) {
+    next(err);
+  }
+});
 
 router.post('/:bookingId/confirm', async (req, res, next) => {
   try {
