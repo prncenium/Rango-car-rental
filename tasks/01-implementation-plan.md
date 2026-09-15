@@ -373,6 +373,40 @@ Each model task is: schema + indexes + a test asserting the indexes actually exi
 
 ---
 
+## Block AUTH-FIX — Backend audit remediation (2026-09-16), gap 1
+
+> **Priority: BLOCKER.** Nothing under `/api/auth` exists in the current tree (`server/src/routes/` has no `auth.routes.ts`, `server/src/services/` has no `auth.service.ts`, `server/src/lib/` has no `password.ts`). `middleware/auth.ts` (`requireAuth`/`requireAdmin`/`requireSuperAdmin`) and `lib/jwt.ts` already exist and are the dependency this block builds on, but there is currently no way for any client to obtain the `rgo_at`/`rgo_rt` cookies those depend on. This supersedes the stale `AUTH-05` entry above, which was never implemented.
+
+### AUTH-06 — Password hashing
+- **Does** Argon2id hash/verify wrapper with parameters fixed in one place.
+- **Files** `server/src/lib/password.ts`
+- **Deps** INF-01
+- **Accept** Hash round-trips; two hashes of the same input differ; verify rejects a wrong password.
+- **Test** `server/tests/unit/password.test.ts` — round-trip, salt uniqueness, rejection.
+
+### AUTH-07 — Register and login services
+- **Does** `auth.service.ts`: `register()` (creates `User` with `isActive: true`, hashed password, `User.failedLoginCount: 0`) and `login()` (constant-time credential check via `guardCredentialsValid`, `guardAccountActive`, issues `Session` + token pair). Both write an `AuditLog` entry; spec 02 E-02's login-failure case has no actor and is intentionally unaudited except a successful `ADMIN`/`SUPER_ADMIN` login.
+- **Files** `server/src/services/auth.service.ts`
+- **Deps** AUTH-06, M-01 (`User.model.ts`), `models/Session.model.ts` (already present), `lib/jwt.ts` (already present)
+- **Accept** Duplicate email/phone returns `409 CONFLICT`, not a 500; login rejects a deactivated user with `ACCOUNT_INACTIVE`; wrong password and unknown email return identical `UNAUTHENTICATED` errors with comparable timing.
+- **Test** `server/tests/unit/services/auth.test.ts` — duplicate email, duplicate phone, wrong password (timing-insensitive assertion), deactivated user.
+
+### AUTH-08 — Refresh, logout, and session rotation
+- **Does** `refresh()` (rotates `rgo_at`/`rgo_rt`/`rgo_csrf`, re-reads `User.isActive` from the database per spec 02 §6.1, detects refresh-token reuse via the `Session` collection and revokes the session family on reuse) and `logout()` (revokes the current session, clears cookies).
+- **Files** `server/src/services/auth.service.ts`, `server/src/models/Session.model.ts` (already present — extend only if a field is missing)
+- **Deps** AUTH-07
+- **Accept** An expired-but-well-formed access token still lets `logout` clear cookies; a deactivated user cannot refresh past the ban; a reused refresh token revokes every session in its family and returns `401`.
+- **Test** `server/tests/unit/services/auth.refresh.test.ts` — reuse-detection case, deactivated-mid-session case, logout-with-expired-token case.
+
+### AUTH-09 — Auth routes
+- **Does** `POST /api/auth/register`, `/login`, `/refresh`, `/logout`, `GET /api/auth/me`, wired into `app.ts` ahead of the `/api/user` and `/api/admin` mounts. Cookies `httpOnly`, `sameSite=lax`, `secure` in production, `path=/api`.
+- **Files** `server/src/routes/auth.routes.ts`, `server/src/app.ts`
+- **Deps** AUTH-08, SH-06 (or the DTOs actually shipped in `@rango/shared` if `SH-06` was never merged as written — check before assuming the schema exists)
+- **Accept** Full register→login→refresh→logout cycle works over HTTP; `GET /api/auth/me` returns the caller's own `UserSummary` only; a request without `rgo_at` gets `401 UNAUTHENTICATED` on every route currently gated by `requireAuth`.
+- **Test** `server/tests/integration/auth.routes.test.ts` — full cycle + cookie flag assertions + the existing `requireAuth`-gated routes (listings, bookings, profile) now reachable end-to-end for the first time.
+
+---
+
 ## Block KYC
 
 ### KYC-01 — Submit KYC
@@ -451,6 +485,26 @@ Each model task is: schema + indexes + a test asserting the indexes actually exi
 
 ---
 
+## Block CAR-FIX — Backend audit remediation (2026-09-16), gap 2
+
+> **Priority: BLOCKER.** `carRegistry` in `server/src/transitions/registry.ts` has entries only for `PENDING_APPROVAL → APPROVED` and `PENDING_APPROVAL → REJECTED`. There is no `DRAFT|REJECTED → PENDING_APPROVAL` edge and no `submit`/`withdraw`/`delist` route in `user.listing.routes.ts` (confirmed by reading both files — only `POST /`, `GET /`, `PATCH /:carId`, `POST /:carId/images`, `DELETE /:carId` exist). A car created via `POST /api/user/listings` can never leave `DRAFT`, so `CAR-03`'s approve/reject edges and every downstream `CAR`/`BOOK` task are unreachable through the API even though the service-layer code for them exists.
+
+### CAR-08 — Submission transition edges
+- **Does** Add `DRAFT → PENDING_APPROVAL` and `REJECTED → PENDING_APPROVAL` to `carRegistry` (keyed on `moderationStatus`, `actorClasses: ['USER', 'ADMIN', 'SUPER_ADMIN']` scoped to the owner in the service layer per spec 01 actor class `OWNER`), plus the reverse `PENDING_APPROVAL|APPROVED → DRAFT` edge for withdraw (spec 02 E-12) and `LISTED → DELISTED` for owner-initiated delist (spec 02 E-13, exception E3) if not already reachable through the existing `listingState` registry entries.
+- **Files** `server/src/transitions/registry.ts`, `server/src/transitions/guards/car.guards.ts` (reuse `guardRegistrationAvailable` at submit time per D3)
+- **Deps** M-03, TR-02
+- **Accept** A `DRAFT` car can reach `PENDING_APPROVAL` through the registry; a plate collision at submit time is a named `GUARD_FAILED`, not an unguarded write; withdraw returns an `APPROVED` (and therefore possibly `LISTED`) car to `DRAFT`, and `guardNoActiveDayLocks`-equivalent protection stops a car with a live booking from being withdrawn out from under it.
+- **Test** `server/tests/unit/services/car.submit.test.ts` — submit success, plate-collision rejection, withdraw round-trip.
+
+### CAR-09 — Submit, withdraw, delist routes
+- **Does** `POST /api/user/listings/:carId/submit`, `POST /api/user/listings/:carId/withdraw`, `POST /api/user/listings/:carId/delist` in `user.listing.routes.ts`, each scoped to the owner (`guardIsOwner`, 404 on a non-owned car).
+- **Files** `server/src/routes/user.listing.routes.ts`, `server/src/services/car.service.ts`
+- **Deps** CAR-08
+- **Accept** A non-owner calling any of the three gets `404`, not `403`; submitting a car missing required fields (e.g. no `rentalPricePerDay`) is `VALIDATION_FAILED` at creation time, not discovered here; the full `DRAFT → PENDING_APPROVAL → APPROVED` path is reachable end-to-end over HTTP for the first time.
+- **Test** `server/tests/integration/car.submission.test.ts` — full submit→admin-approve→publish cycle over HTTP; cross-owner 404 case.
+
+---
+
 ## Block BOOK
 
 > **Ordering note.** `BOOK-06` depends on `PAY-02`. Run `PAY-01` and `PAY-02` out of block order, immediately after `BOOK-05`.
@@ -513,6 +567,47 @@ Each model task is: schema + indexes + a test asserting the indexes actually exi
 
 ---
 
+## Block BOOK-FIX — Backend audit remediation (2026-09-16), gaps 4, 5, 6, 9
+
+> Confirmed against `server/src/transitions/registry.ts` and `server/src/routes/{user,admin}.booking.routes.ts`: `bookingRegistry` has `REQUESTED→CANCELLED`, `CONFIRMED→CANCELLED`, and `CANCELLATION_REQUESTED→CANCELLED` edges, but **no edge writes `CANCELLATION_REQUESTED`** — it is a dead state reachable from nowhere. There is no `ACTIVE→TERMINATED` edge at all. `CONFIRMED→NO_SHOW` exists (`guardStartDatePassed`, sets `noShowCleared: false`) but no edge ever sets `noShowCleared: true`. `guardPaymentCovered` on `CONFIRMED→ACTIVE` checks payment only, not renter account state.
+
+### BOOK-09 — Cancellation-request transition and guard
+- **Does** Add `CONFIRMED → CANCELLATION_REQUESTED` to `bookingRegistry` (`actorClasses: ['USER', 'ADMIN', 'SUPER_ADMIN']`, scoped in the service layer to the renter or the car's owner per spec 03 `guardIsRenterOrCarOwner` / spec 02 exception E6 — locks are **not** released by this edge).
+- **Files** `server/src/transitions/registry.ts`, `server/src/services/booking.service.ts`
+- **Deps** BOOK-05
+- **Accept** Either the renter or the car owner (not a third party) can move a `CONFIRMED` booking to `CANCELLATION_REQUESTED`; day-locks are untouched by this transition; the booking's `CANCELLATION_REQUESTED → CANCELLED` edge (already in the registry) becomes reachable for the first time.
+- **Test** `server/tests/unit/services/booking.cancellationRequest.test.ts` — renter-triggers, owner-triggers, third-party-rejected, lock-retention assertion.
+
+### BOOK-10 — Cancellation-request routes
+- **Does** `POST /api/user/bookings/:id/request-cancellation` (renter or car owner) and `POST /api/admin/bookings/:id/resolve-cancellation` (admin resolves to `CANCELLED` or back to `CONFIRMED`, per spec 02 D4).
+- **Files** `server/src/routes/user.booking.routes.ts`, `server/src/routes/admin.booking.routes.ts`, `server/src/services/booking.service.ts`
+- **Deps** BOOK-09
+- **Accept** Resolving back to `CONFIRMED` requires the registry to carry a `CANCELLATION_REQUESTED → CONFIRMED` edge (add if absent); resolving to `CANCELLED` releases all locks exactly as the existing cancel paths do.
+- **Test** `server/tests/integration/booking.cancellationRequest.test.ts` — both resolutions over HTTP.
+
+### BOOK-11 — Terminate a live rental
+- **Does** `ACTIVE → TERMINATED` edge (admin-only, `reason` required) plus `POST /api/admin/bookings/:id/terminate`. Releases day-locks for `[effectiveFrom, endDate)` only — days already consumed stay locked/historical, matching `Booking.terminatedAt`/`terminationReason` fields already present on the model.
+- **Files** `server/src/transitions/registry.ts`, `server/src/services/booking.service.ts`, `server/src/routes/admin.booking.routes.ts`
+- **Deps** BOOK-07
+- **Accept** Terminating frees only the future portion of the range; the car becomes bookable again for the freed days; a missing `reason` is `VALIDATION_FAILED`.
+- **Test** `server/tests/unit/services/booking.terminate.test.ts` — lock-release boundary (past retained, future freed).
+
+### BOOK-12 — Clear a no-show
+- **Does** `CONFIRMED|NO_SHOW → NO_SHOW` is not the gap — the gap is that `noShowCleared` (set to `false` by the existing `markNoShow`) has no transition that ever sets it `true`. Add an admin action that sets `noShowCleared: true` without changing `Booking.status`, so `guardNoUnresolvedNoShow` in `requestBooking` (referenced by the earlier audit; verify the guard's actual name in `booking.guards.ts` before wiring) stops treating the renter as permanently banned.
+- **Files** `server/src/services/booking.service.ts`, `server/src/routes/admin.booking.routes.ts`, `server/src/transitions/guards/booking.guards.ts` if the guard needs adjusting
+- **Deps** BOOK-07
+- **Accept** A renter with a cleared no-show can successfully request a new booking; an uncleared no-show still blocks new requests from the same renter; the action writes its own `AuditLog` action distinct from `BOOKING_NO_SHOW`.
+- **Test** `server/tests/unit/services/booking.clearNoShow.test.ts` — blocked-then-cleared-then-allowed sequence.
+
+### BOOK-13 — Renter-active re-check on activation
+- **Does** Add `guardRenterActive` to the `CONFIRMED → ACTIVE` edge (alongside the existing `guardPaymentCovered`), re-reading `Booking.renter`'s `User.isActive` inside the transaction — a renter deactivated between confirm and handover must not receive the car (spec 03 §4.6: the token is never the authority; spec 03 DEFECT-2).
+- **Files** `server/src/transitions/guards/booking.guards.ts`, `server/src/transitions/registry.ts`
+- **Deps** BOOK-06
+- **Accept** Activating a booking whose renter was deactivated after confirmation fails with a named `GUARD_FAILED`; activating a booking for a still-active renter is unaffected.
+- **Test** `server/tests/unit/services/booking.activate.test.ts` — add the deactivated-renter case to the existing test file.
+
+---
+
 ## Block PAY
 
 ### PAY-01 — Record an expected payment
@@ -552,6 +647,40 @@ Each model task is: schema + indexes + a test asserting the indexes actually exi
 
 ---
 
+## Block PAY-FIX — Backend audit remediation (2026-09-16), gap 7
+
+> Confirmed against `server/src/services/payment.service.ts` and `server/src/routes/admin.booking.routes.ts`: the only payment operation implemented is `confirmOfflinePayment`, which creates a `Payment` already `SETTLED` in one step (mounted at `POST /api/admin/bookings/:bookingId/confirm-offline-payment`, not under a `payment.routes.ts` at all). There is no standalone `record` (create `PENDING`), `settle`, `void`, or `refund` (`direction: OUT`) operation, so a deposit-retention or partial-refund flow (spec 04 §6, §2.3's late-fee/refund cases) has no way to be represented.
+
+### PAY-06 — Record an expected payment
+- **Does** `recordPayment()`: admin creates a `Payment` with `status: PENDING`, `direction: IN`, against a booking in a state that expects payment. Kept separate from `confirmOfflinePayment` (which stays as the one-click PENDING+SETTLED shortcut) so a payment can be logged as expected before cash actually arrives.
+- **Files** `server/src/services/payment.service.ts`
+- **Deps** M-06 (`Payment.model.ts`, already present), TR-03
+- **Accept** A payment against a non-existent or terminal (`CANCELLED`/`REJECTED`/`COMPLETED`) booking is rejected; `Booking.amountReceived`/`depositReceived` is untouched until settlement.
+- **Test** `server/tests/unit/services/payment.record.test.ts` — parent-state guard cases.
+
+### PAY-07 — Settle a payment
+- **Does** `settlePayment()`: `PENDING → SETTLED`, updating the correct `Booking` amount field (`amountReceived` or `depositReceived`, per `purpose`) in the same transaction as `confirmOfflinePayment` already does.
+- **Files** `server/src/services/payment.service.ts`
+- **Deps** PAY-06
+- **Accept** The booking's amount field equals the signed sum of settled payments of that purpose; an aborted transaction leaves it unchanged.
+- **Test** `server/tests/unit/services/payment.settle.test.ts` — sum correctness across two partial payments + rollback case.
+
+### PAY-08 — Void a payment
+- **Does** `voidPayment()`: `PENDING → VOID` with a required reason.
+- **Files** `server/src/services/payment.service.ts`
+- **Deps** PAY-07
+- **Accept** A voided payment never contributes to a booking's amount fields; voiding an already-`SETTLED` payment is rejected.
+- **Test** `server/tests/unit/services/payment.void.test.ts` — both cases.
+
+### PAY-09 — Refund and payment routes
+- **Does** `refundPayment()`: creates a new `direction: OUT` payment with `refundOf` set to the original, decrementing the relevant `Booking` amount field; supports partial refunds. Also adds the missing `server/src/routes/admin.payment.routes.ts` exposing record/settle/void/refund plus `GET /api/admin/payments` (list) and wires it into `app.ts`.
+- **Files** `server/src/services/payment.service.ts`, `server/src/routes/admin.payment.routes.ts`, `server/src/app.ts`
+- **Deps** PAY-08
+- **Accept** The original `IN` record is unmodified by a refund; a refund exceeding the original (net of prior refunds) is rejected; every one of the five payment endpoints is admin-only.
+- **Test** `server/tests/unit/services/payment.refund.test.ts` — partial refund, over-refund rejection, original-immutability; `server/tests/integration/payment.routes.test.ts` — RBAC across all five endpoints.
+
+---
+
 ## Block ADM — Admin surface
 
 ### ADM-01 — Audit query endpoint
@@ -567,6 +696,87 @@ Each model task is: schema + indexes + a test asserting the indexes actually exi
 - **Deps** ADM-01
 - **Accept** "Confirmed but unpaid" is answerable in one query; counts match the underlying collections.
 - **Test** `server/tests/integration/adminQueue.test.ts` — seeded fixtures with known counts per queue.
+
+---
+
+## Block ADM-FIX — Backend audit remediation (2026-09-16), gaps 3, 10
+
+> Confirmed against `server/src/routes/admin.car.routes.ts` (only approve/reject/publish/delist/relist/availability-blocks — no `GET`), `admin.booking.routes.ts` (only mutation actions — no `GET`), and `server/src/services/user.service.ts` (`deactivateUser` calls `guardNotLastAdmin`/`guardNotLastSuperAdmin` but no privilege-ordering guard; `reactivateUser` calls **no guards at all**). As written, any `ADMIN` can deactivate or reactivate a `SUPER_ADMIN` account.
+
+### ADM-03 — Admin listing read endpoints
+- **Does** `GET /api/admin/listings` (filterable list, per spec 02 §11) and `GET /api/admin/listings/:carId` (full `AdminCar` shape including `owner`, `activeBookingId?`, `lockedDayCount`).
+- **Files** `server/src/services/car.service.ts`, `server/src/routes/admin.car.routes.ts`
+- **Deps** CAR-06 (or the query helper actually shipped, if named differently)
+- **Accept** Admins can see cars in every moderation/listing-state combination, including `DRAFT`; pagination and sort match §4 of spec 02.
+- **Test** `server/tests/integration/admin.listings.test.ts` — one fixture per moderation×listing combination, list and detail.
+
+### ADM-04 — Admin booking read endpoints
+- **Does** `GET /api/admin/bookings` (with `conflictedOnly`, `staleOnly`, `overdueOnly` filters per spec 04 §1.4/§2.3) and `GET /api/admin/bookings/:bookingId` (`AdminBookingDetail` — both parties in full, `payments[]`, `dayLocks` summary).
+- **Files** `server/src/services/booking.service.ts`, `server/src/routes/admin.booking.routes.ts`
+- **Deps** BOOK-08
+- **Accept** An admin can retrieve any booking regardless of party; the three boolean filters each isolate the correct fixture set.
+- **Test** `server/tests/integration/admin.bookings.test.ts` — filter matrix + detail-shape assertion.
+
+### ADM-05 — Admin payment list endpoint
+- **Does** `GET /api/admin/payments` with filters on `booking`, `direction`, `status`. (Folded into `PAY-09` if that task lands first — do not duplicate.)
+- **Files** `server/src/services/payment.service.ts`, `server/src/routes/admin.payment.routes.ts`
+- **Deps** PAY-09
+- **Accept** Filters compose; results are admin-only.
+- **Test** `server/tests/integration/admin.payments.test.ts` — filter cases.
+
+### ADM-06 — Privilege-ordering guard on user state changes
+- **Does** `guardNotHigherPrivilege`: an `ADMIN` may not deactivate, reactivate, or (once `SA-01`/`SA-02` exist) promote/demote a `SUPER_ADMIN`. Apply it to `deactivateUser` (alongside the existing `guardNotLastAdmin`/`guardNotLastSuperAdmin`) and — critically — to `reactivateUser`, which currently runs no guards at all.
+- **Files** `server/src/transitions/guards/user.guards.ts`, `server/src/services/user.service.ts`
+- **Deps** M-01
+- **Accept** An `ADMIN` calling `deactivate` or `reactivate` on a `SUPER_ADMIN` account gets a named `GUARD_FAILED`; a `SUPER_ADMIN` may still deactivate/reactivate any `ADMIN`; an `ADMIN` acting on another `ADMIN` or on a `USER` is unaffected.
+- **Test** `server/tests/unit/services/user.privilegeGuard.test.ts` — the four role-pair combinations, deactivate and reactivate both.
+
+---
+
+## Block SA — Super-admin surface
+
+> **Priority: HIGH.** `requireSuperAdmin` middleware already exists (`server/src/middleware/auth.ts`) and `role` already includes `SUPER_ADMIN` throughout the transition registry's `actorClasses`, but there is no route anywhere under `/api/superadmin`, no service to promote/demote, and no read/write endpoint for `SystemConfig` even though `server/src/models/SystemConfig.model.ts` and `server/src/lib/systemConfig.ts` already exist.
+
+### SA-01 — Admin promotion and demotion service
+- **Does** `promoteToAdmin()` (`USER → ADMIN`), `demoteAdmin()` (`ADMIN → USER`), `promoteToSuperAdmin()` (`ADMIN → SUPER_ADMIN`), each writing `AuditLog` and revoking the target's sessions on any role change (spec 03 §4.5 revocation-triggers table).
+- **Files** `server/src/services/superAdmin.service.ts`, `server/src/transitions/guards/user.guards.ts` (reuse `guardNotLastSuperAdmin` on demote-from-super)
+- **Deps** ADM-06
+- **Accept** Demoting the last `SUPER_ADMIN` is rejected; promoting a `USER` directly to `SUPER_ADMIN` in one call is not offered (must go through `ADMIN` first, matching the two-step model spec 03 §1.5 assumes).
+- **Test** `server/tests/unit/services/superAdmin.test.ts` — last-super-admin rejection, session-revocation-on-role-change assertion.
+
+### SA-02 — SystemConfig read/write
+- **Does** `GET /api/superadmin/config`, `PATCH /api/superadmin/config` (e.g. `booking.turnaroundBufferDays` per spec 04 §1.5), surfacing a count of in-flight bookings still holding the old value per spec 04 §1.5's "E-72 must surface the consequence" rule.
+- **Files** `server/src/services/superAdmin.service.ts`, `server/src/lib/systemConfig.ts` (already present — extend), `server/src/routes/superadmin.routes.ts`
+- **Deps** SA-01
+- **Accept** A config change is prospective only (no retroactive rewrite of existing `BookingDayLock` rows, per spec 04 §1.5); the response names how many active bookings are unaffected by the new value.
+- **Test** `server/tests/integration/superAdmin.config.test.ts` — read, write, and the affected-count assertion.
+
+### SA-03 — Super-admin routes
+- **Does** `GET /api/superadmin/admins`, `POST /api/superadmin/admins` (promote), `POST /api/superadmin/admins/:userId/demote`, `POST /api/superadmin/admins/:userId/promote-super`, mounted behind `requireAuth, requireSuperAdmin` in `app.ts`.
+- **Files** `server/src/routes/superadmin.routes.ts`, `server/src/app.ts`
+- **Deps** SA-02
+- **Accept** An `ADMIN` (not `SUPER_ADMIN`) token gets `403` on every route in this block; a `SUPER_ADMIN` token succeeds.
+- **Test** `server/tests/integration/superAdmin.routes.test.ts` — RBAC across all four endpoints.
+
+---
+
+## Block SEC — Security hardening
+
+> **Priority: MEDIUM.** Neither is present anywhere in `server/src/middleware/` or `server/src/app.ts` today.
+
+### SEC-01 — CSRF double-submit token
+- **Does** Non-`httpOnly` `rgo_csrf` cookie issued at login/refresh (already planned in `AUTH-07`/`AUTH-08`'s token issuance); middleware that rejects any non-`GET` request under `/api/user` or `/api/admin` whose `X-CSRF-Token` header does not match the cookie.
+- **Files** `server/src/middleware/csrf.ts`, `server/src/app.ts`
+- **Deps** AUTH-09
+- **Accept** A `POST` with a missing or mismatched CSRF header/cookie pair gets `403 FORBIDDEN`; `GET` requests and everything under `/api/public` are exempt; a matching pair succeeds.
+- **Test** `server/tests/integration/csrf.test.ts` — missing header, mismatched header, matching pair, exempt-route cases.
+
+### SEC-02 — Rate limiting
+- **Does** Fixed-window counters per spec 02 §5's bucket table (`auth.login.ip`, `auth.login.identity`, `user.write`, `admin.write`, etc.), with `RateLimit-*` response headers and `429 RATE_LIMITED` on exhaustion. In-process counter storage is acceptable for a single-node deployment (spec 02 §5 rule 5); note the multi-instance caveat rather than solving it now.
+- **Files** `server/src/middleware/rateLimit.ts`, `server/src/app.ts`, every route file that needs a specific bucket applied
+- **Deps** AUTH-09
+- **Accept** A failed request still consumes its bucket (spec 02 §5 rule 2); a `429` response does not itself consume budget; `auth.login` consumes both the IP and identity buckets and a successful login resets only the identity bucket.
+- **Test** `server/tests/unit/rateLimit.test.ts` — window expiry, failed-request-consumes, 429-does-not-consume, dual-bucket login case.
 
 ---
 
@@ -680,15 +890,24 @@ Each model task is: schema + indexes + a test asserting the indexes actually exi
 | M — Models | 7 | |
 | TR — Transition chokepoint | 4 | INV-3 (TR-02), no-direct-write (TR-04) |
 | AUTH | 5 | |
+| AUTH-FIX *(new, 2026-09-16)* | 4 | **BLOCKER** — nothing under `/api/auth` currently exists |
 | KYC | 3 | |
 | CAR | 7 | INV-1 lands here (CAR-03) |
+| CAR-FIX *(new, 2026-09-16)* | 2 | **BLOCKER** — no path off `DRAFT` currently exists |
 | BOOK | 8 | INV-2 (BOOK-04), INV-5 (BOOK-06) |
+| BOOK-FIX *(new, 2026-09-16)* | 5 | **HIGH** |
 | PAY | 5 | Run PAY-01/02 early — see BOOK block note |
+| PAY-FIX *(new, 2026-09-16)* | 4 | **HIGH** |
 | ADM | 2 | |
+| ADM-FIX *(new, 2026-09-16)* | 4 | **HIGH** |
+| SA — Super-admin surface *(new, 2026-09-16)* | 3 | **HIGH** |
+| SEC — Security hardening *(new, 2026-09-16)* | 2 | **MEDIUM** |
 | CL — Client | 11 | |
 | OPS | 2 | |
-| **Total** | **84** | |
+| **Total** | **97** | |
 
 **Critical path.** S-12 → P-04 → SH-10 → INF-02 → M-05 → TR-02 → TR-03 → BOOK-03 → BOOK-04. Everything else branches off it.
 
-**Removed with the resale flow** (was 93 tasks, now 84): the six-task `SALE` block, `M-06 SaleTransaction model`, the `ADM-01` resale integration test, and `CL-08` buyer sale inquiries. The old `CL-12` (admin sales + audit) is now `CL-11`, audit only.
+**Removed with the resale flow** (was 93 tasks, now 84 before the 2026-09-16 audit): the six-task `SALE` block, `M-06 SaleTransaction model`, the `ADM-01` resale integration test, and `CL-08` buyer sale inquiries. The old `CL-12` (admin sales + audit) is now `CL-11`, audit only.
+
+**2026-09-16 backend audit remediation (13 new tasks, 84 → 97).** A review of the implemented backend against specs 01–04 found: `/api/auth` entirely unimplemented despite `AUTH-05` being marked in this plan (superseded by `AUTH-FIX`); no transition edge or route ever moves a `Car` off `DRAFT` (`CAR-FIX`); the `CANCELLATION_REQUESTED` booking state, `ACTIVE → TERMINATED`, and no-show clearing are all dead ends in the registry (`BOOK-FIX`); the payment model supports only a combined create+settle action with no standalone record/void/refund (`PAY-FIX`); admin has no read endpoints for listings/bookings/payments (`ADM-FIX`); `reactivateUser` runs zero guards and any `ADMIN` can act on a `SUPER_ADMIN` account (`ADM-06`); the `SUPER_ADMIN` role and `requireSuperAdmin` middleware exist but no route or service uses them (`SA`); and neither CSRF protection nor rate limiting exist anywhere despite both being required by spec 02 §5/§6.2 (`SEC`). Priorities: BLOCKER for `AUTH-FIX`/`CAR-FIX` (nothing downstream is reachable without them), HIGH for `BOOK-FIX`/`PAY-FIX`/`ADM-FIX`/`SA`, MEDIUM for `SEC`. No code was changed as part of this update — task-plan only, per `CLAUDE.md`'s "stop after each task for review."
