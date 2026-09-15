@@ -10,6 +10,9 @@ beforeAll(async () => {
   replSet = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: 'wiredTiger' } });
   const uri = replSet.getUri();
   await mongoose.connect(uri);
+  // Mongoose builds indexes in the background by default; tests that assert
+  // on unique constraints or index presence need them to exist synchronously.
+  await Promise.all(Object.values(mongoose.connection.models).map((m) => m.init()));
 }, 60_000);
 
 afterEach(async () => {
