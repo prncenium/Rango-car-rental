@@ -85,12 +85,17 @@ bookingRegistry.set(registryKey('BOOKING', 'status'), [
     sideEffects: (_e, actor) => ({ rejectedBy: actor.userId, rejectedAt: new Date() }),
   },
   {
-    // Covers both an admin cancelling an open request and resolving a
-    // cancellation request to CANCELLED (D4) — locks are released by the
-    // caller after this transition commits (booking.service.ts).
+    // Covers an admin cancelling an open request, resolving a cancellation
+    // request to CANCELLED (D4), and spec 02 E-18/exception E5 — a renter
+    // withdrawing their own still-open request. The USER-role case is only
+    // reachable once booking.service.ts's cancelOwnBookingRequest() has
+    // already confirmed the caller *is* the renter (never the car owner) —
+    // widening actorClasses here does not, by itself, admit anyone else.
+    // Locks are released by the caller after this transition commits
+    // (booking.service.ts) — none exist yet for a REQUESTED booking anyway.
     from: 'REQUESTED',
     to: 'CANCELLED',
-    actorClasses: ['ADMIN', 'SUPER_ADMIN'],
+    actorClasses: ['ADMIN', 'SUPER_ADMIN', 'USER'],
     guards: [],
     auditAction: 'BOOKING_CANCELLED',
     sideEffects: (_e, actor) => ({ cancelledBy: actor.userId, cancelledAt: new Date() }),
