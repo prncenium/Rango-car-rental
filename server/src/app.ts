@@ -13,6 +13,7 @@ import { adminQueueRoutes } from './routes/admin.queue.routes.js';
 import { userListingRoutes } from './routes/user.listing.routes.js';
 import { userBookingRoutes } from './routes/user.booking.routes.js';
 import { userProfileRoutes } from './routes/user.profile.routes.js';
+import { publicCarRoutes } from './routes/public.car.routes.js';
 
 // No `listen` here (design §3) so Supertest can import this directly
 // without binding a port.
@@ -27,6 +28,11 @@ export function createApp(): Express {
   app.get('/api/health', (_req, res) => {
     res.status(200).json({ data: { status: 'ok' } });
   });
+
+  // /api/public: unauthenticated, read-only, serving only
+  // moderationStatus=APPROVED && listingState=LISTED cars (design INV-1,
+  // spec 02 §9). No auth middleware — this is the one namespace with none.
+  app.use('/api/public/cars', publicCarRoutes);
 
   // Route modules mount here as later blocks add them (AUTH, CAR, BOOK, ...).
   // /api/admin: every route requires an active ADMIN/SUPER_ADMIN actor
