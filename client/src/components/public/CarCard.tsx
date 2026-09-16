@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import type { PublicCarSummary } from '../../api/cars';
 import { CarSilhouetteIcon, FuelIcon, GearIcon, MapPinIcon, SeatIcon } from '../ui/icons';
 
@@ -14,7 +15,10 @@ const FUEL_LABEL: Record<string, string> = {
 // is reserved for genuine elevation, not flat cards).
 export function CarCard({ car }: { car: PublicCarSummary }) {
   return (
-    <article className="group overflow-hidden rounded-lg border border-border bg-surface-card transition-shadow hover:shadow-sm">
+    <Link
+      to={`/cars/${car.id}`}
+      className="group block overflow-hidden rounded-lg border border-border bg-surface-card transition-shadow hover:shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus-ring focus-visible:outline-offset-2"
+    >
       <div className="relative aspect-[4/3] bg-surface-sunken">
         {car.primaryImageUrl ? (
           <img
@@ -69,6 +73,6 @@ export function CarCard({ car }: { car: PublicCarSummary }) {
           </div>
         </div>
       </div>
-    </article>
+    </Link>
   );
 }

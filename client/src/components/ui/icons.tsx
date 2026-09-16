@@ -245,6 +245,15 @@ export function HandshakeIcon(props: IconProps) {
   );
 }
 
+export function CalendarIcon(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <rect x="3" y="4.5" width="14" height="12" rx="1.4" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M3 8h14M6.5 2.8v3M13.5 2.8v3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function BadgePercentIcon(props: IconProps) {
   return (
     <svg {...base} {...props}>
