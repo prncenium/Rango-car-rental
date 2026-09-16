@@ -7,7 +7,9 @@
     "moduleResolution": "Bundler",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
-    "noEmit": false
+    "noEmit": false,
+    "allowImportingTsExtensions": false,
+    "types": ["vite/client"]
   },
   "references": [{ "path": "../shared" }],
   "include": ["src"]

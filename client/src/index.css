@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-surface-page text-neutral-800 font-body text-body-md antialiased;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-display text-neutral-900;
+  }
+
+  :focus-visible {
+    outline: 2px solid theme('colors.focus.ring');
+    outline-offset: 2px;
+  }
+}
