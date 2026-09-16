@@ -26,3 +26,5 @@ export * from './entities/auditLog.entity.js';
 export * from './entities/session.entity.js';
 export * from './entities/passwordReset.entity.js';
 export * from './entities/systemConfig.entity.js';
+
+export * from './dto/auth.js';

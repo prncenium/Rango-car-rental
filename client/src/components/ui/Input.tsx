@@ -16,9 +16,9 @@ import { FieldChrome, fieldControlClasses, fieldDescribedBy, useFieldId } from '
 
 export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'id'> {
   id?: string;
-  label?: string;
-  helperText?: string;
-  errorText?: string;
+  label?: string | undefined;
+  helperText?: string | undefined;
+  errorText?: string | undefined;
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(

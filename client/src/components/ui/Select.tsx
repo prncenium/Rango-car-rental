@@ -20,9 +20,9 @@ import { FieldChrome, fieldControlClasses, fieldDescribedBy, useFieldId } from '
 
 export interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, 'id'> {
   id?: string;
-  label?: string;
-  helperText?: string;
-  errorText?: string;
+  label?: string | undefined;
+  helperText?: string | undefined;
+  errorText?: string | undefined;
 }
 
 export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select(

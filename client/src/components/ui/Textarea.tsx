@@ -18,9 +18,9 @@ import { FieldChrome, fieldControlClasses, fieldDescribedBy, useFieldId } from '
 
 export interface TextareaProps extends Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'id'> {
   id?: string;
-  label?: string;
-  helperText?: string;
-  errorText?: string;
+  label?: string | undefined;
+  helperText?: string | undefined;
+  errorText?: string | undefined;
 }
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function Textarea(

@@ -12,9 +12,9 @@ import { cn } from './cn';
  */
 export interface FieldChromeProps {
   fieldId: string;
-  label?: ReactNode;
-  helperText?: ReactNode;
-  errorText?: ReactNode;
+  label?: ReactNode | undefined;
+  helperText?: ReactNode | undefined;
+  errorText?: ReactNode | undefined;
   required?: boolean | undefined;
   children: ReactNode;
 }

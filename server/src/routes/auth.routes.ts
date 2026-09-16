@@ -1,9 +1,17 @@
 import { Router, type Response } from 'express';
-import { z } from 'zod';
+import { loginDto, redeemPasswordResetDto, registerDto } from '@rango/shared';
 import { env } from '../config/env.js';
 import { requireAuth } from '../middleware/auth.js';
 import { AuthError } from '../lib/errors.js';
-import { getUserSummary, login, logout, refresh, register, type AuthTokens } from '../services/auth.service.js';
+import {
+  getUserSummary,
+  login,
+  logout,
+  redeemPasswordReset,
+  refresh,
+  register,
+  type AuthTokens,
+} from '../services/auth.service.js';
 
 const router = Router();
 
@@ -35,32 +43,9 @@ function clearAuthCookies(res: Response): void {
   res.clearCookie('rgo_csrf', { ...baseCookieOptions(), httpOnly: false });
 }
 
-// D10/AUTHZ-4 — no role, isActive, or status field is ever accepted from the
-// body; z.strictObject rejects any unrecognised key as 400, never silently
-// stripping it.
-const registerBody = z.strictObject({
-  name: z.string().trim().min(1).max(200),
-  email: z.string().trim().toLowerCase().email(),
-  phone: z.string().trim().min(1).max(20),
-  password: z.string().min(12).max(128),
-  drivingLicenceNumber: z
-    .string()
-    .trim()
-    .toUpperCase()
-    .min(8)
-    .max(20)
-    .regex(/^[A-Z0-9- ]+$/, 'Driving licence number must contain only letters, digits, hyphens, and spaces.'),
-  drivingLicenceExpiryDate: z.coerce.date().optional(),
-});
-
-const loginBody = z.strictObject({
-  email: z.string().trim().toLowerCase().email(),
-  password: z.string().min(1).max(128),
-});
-
 router.post('/register', async (req, res, next) => {
   try {
-    const body = registerBody.parse(req.body);
+    const body = registerDto.parse(req.body);
     const { user, tokens } = await register(body, {
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
@@ -74,7 +59,7 @@ router.post('/register', async (req, res, next) => {
 
 router.post('/login', async (req, res, next) => {
   try {
-    const body = loginBody.parse(req.body);
+    const body = loginDto.parse(req.body);
     const { user, tokens } = await login(body, {
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
@@ -113,6 +98,21 @@ router.post('/logout', async (req, res, next) => {
     const rawRefreshToken = req.cookies?.rgo_rt as string | undefined;
     await logout(rawRefreshToken);
     clearAuthCookies(res);
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
+// spec 03 §7 E-75 — public redemption of an admin-issued reset token
+// (E-66, not yet implemented). No cookie is used and the token in the body
+// is itself the credential, so this is CSRF-exempt (§8.4) and requires no
+// auth. No session is established on success — the client logs in next,
+// consistent with E-01 (spec 02 OQ-21).
+router.post('/password/reset', async (req, res, next) => {
+  try {
+    const body = redeemPasswordResetDto.parse(req.body);
+    await redeemPasswordReset(body);
     res.status(204).send();
   } catch (err) {
     next(err);

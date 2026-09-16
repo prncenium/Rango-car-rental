@@ -1,4 +1,7 @@
 import { Routes, Route } from 'react-router-dom';
+import { LoginPage } from './pages/auth/Login';
+import { RegisterPage } from './pages/auth/Register';
+import { ResetPasswordPage } from './pages/auth/ResetPassword';
 
 function Home() {
   return (
@@ -17,6 +20,9 @@ export function App() {
   return (
     <Routes>
       <Route path="/" element={<Home />} />
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
     </Routes>
   );
 }

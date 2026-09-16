@@ -1,10 +1,12 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import mongoose, { type ClientSession, type HydratedDocument, Types } from 'mongoose';
+import type { RedeemPasswordResetDto } from '@rango/shared';
 import { AccountInactiveError, AuthError, ConflictError, NotFoundError } from '../lib/errors.js';
 import { hashPassword, verifyPassword, getDummyPasswordHash } from '../lib/password.js';
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from '../lib/jwt.js';
 import { User, type UserDoc } from '../models/User.model.js';
 import { Session } from '../models/Session.model.js';
+import { PasswordReset } from '../models/PasswordReset.model.js';
 import { AuditLog } from '../models/AuditLog.model.js';
 import { Car } from '../models/Car.model.js';
 import type { ActorContext } from '../lib/actor.js';
@@ -282,6 +284,62 @@ export async function logout(rawRefreshToken: string | undefined): Promise<void>
     { refreshTokenHash: tokenHash, status: 'ACTIVE' },
     { $set: { status: 'REVOKED', revokedReason: 'LOGOUT' } },
   );
+}
+
+// spec 03 §7 E-75 — redeems a token issued out-of-band by an admin (E-66,
+// not yet implemented). Invalid, expired, and already-used tokens all
+// return the identical AuthError so redemption is not an oracle (§7's
+// "all identical, no oracle"). Resets the §9.1 lockout counters, same as any
+// other successful credential event.
+export async function redeemPasswordReset(input: RedeemPasswordResetDto): Promise<void> {
+  const tokenHash = sha256Hex(input.token);
+
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      const reset = await PasswordReset.findOne({ tokenHash }).session(session);
+      if (!reset || reset.usedAt !== null || reset.expiresAt.getTime() <= Date.now()) {
+        throw new AuthError('This reset link is invalid or has expired.');
+      }
+
+      const user = await User.findById(reset.user).session(session);
+      if (!user) {
+        throw new AuthError('This reset link is invalid or has expired.');
+      }
+      if (!user.isActive) {
+        throw new AccountInactiveError('This account has been deactivated.');
+      }
+
+      user.passwordHash = await hashPassword(input.newPassword);
+      user.failedLoginCount = 0;
+      user.set('lockedUntil', undefined);
+      await user.save({ session });
+
+      reset.usedAt = new Date();
+      await reset.save({ session });
+
+      await Session.updateMany(
+        { user: user._id, status: 'ACTIVE' },
+        { $set: { status: 'REVOKED', revokedReason: 'PASSWORD_CHANGED' } },
+        { session },
+      );
+
+      await AuditLog.create(
+        [
+          {
+            actor: user._id,
+            actorRole: user.role,
+            action: 'USER_PASSWORD_RESET_REDEEMED',
+            entityType: 'USER',
+            entityId: user._id,
+          },
+        ],
+        { session },
+      );
+    });
+  } finally {
+    await session.endSession();
+  }
 }
 
 export interface UserSummary {
