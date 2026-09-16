@@ -1,4 +1,5 @@
-import { apiFetch } from '../lib/apiClient';
+import type { BookingStatus } from '@rango/shared';
+import { apiFetch, apiFetchWithMeta } from '../lib/apiClient';
 
 // requestBookingDto (spec 02 §10.2 E-17 / exception E4) — mirrors
 // server/src/routes/user.booking.routes.ts's requestBookingBody exactly.
@@ -30,4 +31,79 @@ export interface RequestedBooking {
 
 export function requestBooking(input: RequestBookingInput): Promise<RequestedBooking> {
   return apiFetch<RequestedBooking>('/user/bookings', { method: 'POST', body: input });
+}
+
+// GET /api/user/bookings (E-20). listOwnBookings() in
+// server/src/services/booking.service.ts returns raw, unpopulated `.lean()`
+// Booking documents — `car`/`renter`/`owner` are plain id strings, not the
+// PublicCarSummary/PartyContact shapes spec 02 §7.2 describes for
+// BookingSummary/BookingDetail. There is no name, phone, or make/model on
+// this response at all yet (populate() is not called), so this dashboard
+// cannot show "revealed contact info" or a car title from this endpoint as
+// specced — that needs a server-side change, not resolved here per
+// CLAUDE.md's "never modify specs while implementing."
+export interface OwnBooking {
+  id: string;
+  car: string;
+  renter: string;
+  owner: string;
+  startDate: string;
+  endDate: string;
+  days: number;
+  ratePerDaySnapshot: number;
+  totalAmount: number;
+  amountReceived: number;
+  status: BookingStatus;
+  rejectionReason?: string;
+  cancellationReason?: string;
+  terminationReason?: string;
+  createdAt: string;
+}
+
+export interface ListOwnBookingsQuery {
+  page?: number | undefined;
+  limit?: number | undefined;
+  sort?: 'createdAt:desc' | 'startDate:asc' | 'startDate:desc' | undefined;
+  role?: 'RENTER' | 'OWNER' | undefined;
+  status?: BookingStatus[] | undefined;
+}
+
+export interface ListMeta {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+  hasNext: boolean;
+  sort: string;
+}
+
+function buildBookingsQueryString(query: ListOwnBookingsQuery): string {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value === undefined || value === null || value === '') continue;
+    if (Array.isArray(value)) {
+      for (const item of value) params.append(key, String(item));
+    } else {
+      params.set(key, String(value));
+    }
+  }
+  const qs = params.toString();
+  return qs ? `?${qs}` : '';
+}
+
+export function listOwnBookings(
+  query: ListOwnBookingsQuery = {},
+): Promise<{ data: OwnBooking[]; meta: ListMeta }> {
+  return apiFetchWithMeta<OwnBooking[], ListMeta>(`/user/bookings${buildBookingsQueryString(query)}`);
+}
+
+// POST /api/user/bookings/:bookingId/cancel (E-18 / exception E5) — the
+// renter withdrawing their own still-REQUESTED request. `reason` is
+// optional here (unlike request-cancellation on a CONFIRMED booking, which
+// does not exist as a wired endpoint in this pass).
+export function cancelOwnBooking(bookingId: string, reason?: string): Promise<OwnBooking> {
+  return apiFetch<OwnBooking>(`/user/bookings/${bookingId}/cancel`, {
+    method: 'POST',
+    body: reason ? { reason } : {},
+  });
 }
