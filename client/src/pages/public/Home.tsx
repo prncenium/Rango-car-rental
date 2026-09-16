@@ -6,6 +6,7 @@ import { CarCard } from '../../components/public/CarCard';
 import { CarCardSkeleton } from '../../components/public/CarCardSkeleton';
 import { EmptyState } from '../../components/public/EmptyState';
 import { Button } from '../../components/ui/Button';
+import { useAuthStore } from '../../store/auth.store';
 import {
   BadgePercentIcon,
   CarSilhouetteIcon,
@@ -17,8 +18,8 @@ import {
 const VALUE_PROPS = [
   {
     icon: ShieldCheckIcon,
-    title: 'Admin-approved listings',
-    body: 'Every car is reviewed by hand before it ever goes public — no unverified listings, no surprises on pickup day.',
+    title: 'Every listing, reviewed',
+    body: 'An admin reviews the car and its details by hand before a listing ever goes public — no unreviewed listings, no surprises on pickup day.',
   },
   {
     icon: HandshakeIcon,
@@ -40,6 +41,7 @@ const STEPS = [
 
 export function HomePage() {
   const navigate = useNavigate();
+  const isAuthenticated = useAuthStore((state) => state.status === 'authenticated');
   const { data, isLoading, isError } = useQuery({
     queryKey: ['public-cars', 'featured'],
     queryFn: () => listPublicCars({ limit: 8, sort: 'publishedAt:desc' }),
@@ -57,7 +59,7 @@ export function HomePage() {
             Rental, run properly
           </p>
           <h1 className="mt-3 max-w-2xl font-display text-display-lg text-neutral-0 sm:text-display-xl">
-            Rent a real car from a real owner, verified by a real admin.
+            Rent a real car, every listing reviewed by a real admin.
           </h1>
           <p className="mt-5 max-w-xl text-body-lg text-neutral-200">
             Every listing on Rango is approved before it's public and every rental is handed over
@@ -74,7 +76,7 @@ export function HomePage() {
               Browse available cars
             </Button>
             <Link
-              to="/register"
+              to={isAuthenticated ? '/account/listings/new' : '/register'}
               className="inline-flex h-12 w-full items-center justify-center rounded-sm border border-neutral-0/30 px-6 text-body-md text-neutral-0 transition-colors hover:bg-neutral-0/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus-ring focus-visible:outline-offset-2 sm:w-auto"
             >
               List your car

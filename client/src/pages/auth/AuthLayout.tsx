@@ -27,8 +27,9 @@ export function AuthLayout({
         <div className="max-w-md">
           <p className="font-display text-display-md leading-tight">Rental, run properly.</p>
           <p className="mt-4 text-body-lg text-neutral-200">
-            Every listing is approved by hand and every handover happens in person. No online
-            payment, no surprises — just a car and a key, exchanged with someone who checked.
+            Every listing is reviewed by hand before it goes public, and every handover happens
+            in person. No online payment, no surprises — just a car and a key, exchanged
+            face-to-face.
           </p>
         </div>
         <p className="text-body-sm text-neutral-400">© {new Date().getFullYear()} Rango Car Rental</p>

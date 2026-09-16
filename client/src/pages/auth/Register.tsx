@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { registerDto, type RegisterDto } from '@rango/shared';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link, useNavigate } from 'react-router-dom';
 import * as authApi from '../../api/auth.api';
@@ -13,8 +13,18 @@ const FIELDS = ['name', 'email', 'phone', 'password', 'drivingLicenceNumber', 'd
 
 export function RegisterPage() {
   const navigate = useNavigate();
+  const status = useAuthStore((state) => state.status);
   const setUser = useAuthStore((state) => state.setUser);
   const [formError, setFormError] = useState<string | null>(null);
+
+  // spec 03 §2.5 — creating a second account from inside a session is either
+  // a mistake or an attempt to hold two identities; send an already-logged-in
+  // visitor away rather than let them submit into a 409.
+  useEffect(() => {
+    if (status === 'authenticated') {
+      navigate('/', { replace: true });
+    }
+  }, [status, navigate]);
 
   const {
     register,
@@ -35,10 +45,14 @@ export function RegisterPage() {
     }
   });
 
+  if (status === 'authenticated') {
+    return null;
+  }
+
   return (
     <AuthLayout
       title="Create your account"
-      subtitle="You'll need a driving licence on file before you can rent or list a car."
+      subtitle="Registration includes a one-time driving licence number on file — we don't verify it, and it's never rechecked."
     >
       <Card>
         <CardBody>

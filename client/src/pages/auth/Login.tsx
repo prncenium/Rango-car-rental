@@ -1,8 +1,8 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { loginDto, type LoginDto } from '@rango/shared';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import * as authApi from '../../api/auth.api';
 import { Button, Card, CardBody, Input } from '../../components/ui';
 import { useAuthStore } from '../../store/auth.store';
@@ -13,8 +13,21 @@ const FIELDS = ['email', 'password'] as const;
 
 export function LoginPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const status = useAuthStore((state) => state.status);
   const setUser = useAuthStore((state) => state.setUser);
   const [formError, setFormError] = useState<string | null>(null);
+
+  const next = searchParams.get('next') || '/';
+
+  // spec 03 §2.5 — re-login while authenticated is allowed at the API layer,
+  // but the client sends an already-logged-in visitor straight past the form
+  // rather than making them re-authenticate to see it.
+  useEffect(() => {
+    if (status === 'authenticated') {
+      navigate(next, { replace: true });
+    }
+  }, [status, next, navigate]);
 
   const {
     register,
@@ -29,11 +42,15 @@ export function LoginPage() {
       await authApi.login(values);
       const me = await authApi.getCurrentUser();
       setUser(me);
-      navigate('/');
+      navigate(next, { replace: true });
     } catch (error) {
       setFormError(applyApiError(error, setError, FIELDS));
     }
   });
+
+  if (status === 'authenticated') {
+    return null;
+  }
 
   return (
     <AuthLayout title="Welcome back" subtitle="Sign in to manage your bookings and listings.">
