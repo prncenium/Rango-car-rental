@@ -10,6 +10,9 @@ import { RenterDashboardPage } from './pages/user/RenterDashboard';
 import { OwnerDashboardPage } from './pages/user/OwnerDashboard';
 import { CreateListingPage, EditListingPage } from './pages/user/ListingForm';
 import { ProfilePage } from './pages/user/Profile';
+import { AdminDashboardPage } from './pages/admin/Dashboard';
+import { AdminListingModerationPage } from './pages/admin/ListingModeration';
+import { AdminListingDetailPage } from './pages/admin/ListingDetail';
 
 export function App() {
   return (
@@ -29,6 +32,10 @@ export function App() {
       <Route path="/account/listings/new" element={<CreateListingPage />} />
       <Route path="/account/listings/:carId/edit" element={<EditListingPage />} />
       <Route path="/account/profile" element={<ProfilePage />} />
+      <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
+      <Route path="/admin/dashboard" element={<AdminDashboardPage />} />
+      <Route path="/admin/listings" element={<AdminListingModerationPage />} />
+      <Route path="/admin/listings/:carId" element={<AdminListingDetailPage />} />
     </Routes>
   );
 }
