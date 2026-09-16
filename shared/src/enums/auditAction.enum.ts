@@ -19,6 +19,7 @@ export const AUDIT_ACTIONS = [
 
   // Car
   'CAR_SUBMITTED',
+  'CAR_WITHDRAWN',
   'CAR_EDITED',
   'CAR_DELETED',
   'CAR_APPROVED',

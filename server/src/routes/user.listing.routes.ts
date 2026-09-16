@@ -2,13 +2,24 @@ import { Router, type NextFunction, type Request, type Response } from 'express'
 import multer from 'multer';
 import { z } from 'zod';
 import { CAR_FUEL_TYPES, CAR_LISTING_STATES, CAR_MODERATION_STATUSES, CAR_TRANSMISSIONS, objectIdSchema } from '@rango/shared';
-import { addListingImages, createListing, deleteListing, listOwnListings, updateListing } from '../services/car.service.js';
+import {
+  addListingImages,
+  createListing,
+  deleteListing,
+  getOwnListing,
+  listOwnListings,
+  ownerDelistListing,
+  submitListing,
+  updateListing,
+  withdrawListing,
+} from '../services/car.service.js';
 import { carImageUpload } from '../lib/imageUpload.js';
 import { PayloadTooLargeError, ValidationError } from '../lib/errors.js';
 
 const router = Router();
 
 const carIdParams = z.object({ carId: objectIdSchema });
+const reasonBody = z.strictObject({ reason: z.string().min(1).max(500) });
 
 const carLocationSchema = z.strictObject({
   city: z.string().trim().min(1),
@@ -101,11 +112,57 @@ router.get('/', async (req, res, next) => {
   }
 });
 
+router.get('/:carId', async (req, res, next) => {
+  try {
+    const { carId } = carIdParams.parse(req.params);
+    const car = await getOwnListing(carId, req.actor!);
+    res.status(200).json({ data: car });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.patch('/:carId', async (req, res, next) => {
   try {
     const { carId } = carIdParams.parse(req.params);
     const body = updateListingBody.parse(req.body);
     const car = await updateListing(carId, req.actor!, body);
+    res.status(200).json({ data: car });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// spec 02 E-11, exception E1 — DRAFT|REJECTED -> PENDING_APPROVAL.
+router.post('/:carId/submit', async (req, res, next) => {
+  try {
+    const { carId } = carIdParams.parse(req.params);
+    z.strictObject({}).parse(req.body ?? {});
+    const car = await submitListing(carId, req.actor!);
+    res.status(200).json({ data: car });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// spec 02 E-12, exception E2 — PENDING_APPROVAL|APPROVED -> DRAFT.
+router.post('/:carId/withdraw', async (req, res, next) => {
+  try {
+    const { carId } = carIdParams.parse(req.params);
+    z.strictObject({}).parse(req.body ?? {});
+    const car = await withdrawListing(carId, req.actor!);
+    res.status(200).json({ data: car });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// spec 02 E-13, exception E3 — LISTED -> DELISTED, owner-triggered.
+router.post('/:carId/delist', async (req, res, next) => {
+  try {
+    const { carId } = carIdParams.parse(req.params);
+    const { reason } = reasonBody.parse(req.body);
+    const car = await ownerDelistListing(carId, reason, req.actor!);
     res.status(200).json({ data: car });
   } catch (err) {
     next(err);

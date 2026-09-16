@@ -251,6 +251,105 @@ export async function deleteListing(carId: string, actor: ActorContext): Promise
   }
 }
 
+// spec 02 E-15 — single-record read, owner-scoped. Ownership failures are
+// 404, not 403 (§3.4 rule 2), via the same loadOwnCarOrThrow every other
+// owner-scoped endpoint in this file uses.
+export async function getOwnListing(carId: string, actor: ActorContext): Promise<CarE> {
+  const car = await Car.findById(carId);
+  if (!car || String(car.owner) !== String(actor.userId)) {
+    throw new NotFoundError('Car not found.');
+  }
+  return car;
+}
+
+// spec 02 E-11 (exception E1) / CAR-08, CAR-09 — DRAFT|REJECTED ->
+// PENDING_APPROVAL. Ownership is scoped by loadOwnCarOrThrow (404 for a
+// non-owner, never 403); the plate-collision check (D3) runs as
+// guardRegistrationAvailable inside transition() itself.
+export async function submitListing(carId: string, actor: ActorContext): Promise<CarE> {
+  const session = await mongoose.startSession();
+  try {
+    let result!: CarE;
+    await session.withTransaction(async () => {
+      const car = await loadOwnCarOrThrow(carId, actor, session);
+      result = await transition({
+        registry: carRegistry,
+        entityType: 'CAR',
+        field: 'moderationStatus',
+        entity: car,
+        to: 'PENDING_APPROVAL',
+        actor,
+        session,
+      });
+    });
+    return result;
+  } finally {
+    await session.endSession();
+  }
+}
+
+// spec 02 E-12 (exception E2) / CAR-08, CAR-09 — PENDING_APPROVAL|APPROVED ->
+// DRAFT. The registry's guardNotListed/guardNoActiveDayLocks on the
+// APPROVED->DRAFT edge stop a currently-listed or actively-booked car from
+// being pulled back to DRAFT out from under its own visibility or a live
+// rental.
+export async function withdrawListing(carId: string, actor: ActorContext): Promise<CarE> {
+  const session = await mongoose.startSession();
+  try {
+    let result!: CarE;
+    await session.withTransaction(async () => {
+      const car = await loadOwnCarOrThrow(carId, actor, session);
+      result = await transition({
+        registry: carRegistry,
+        entityType: 'CAR',
+        field: 'moderationStatus',
+        entity: car,
+        to: 'DRAFT',
+        actor,
+        session,
+      });
+    });
+    return result;
+  } finally {
+    await session.endSession();
+  }
+}
+
+// spec 02 E-13 (exception E3) / CAR-08, CAR-09 — LISTED -> DELISTED,
+// owner-triggered. Unlike the admin delist (E-32), there is no `force`
+// override here: guardNoActiveDayLocks is unconditional, matching E-13's
+// guardNoLiveRental / guardNoFutureConfirmedBooking (a day-lock exists for
+// exactly the bookings those two guards describe).
+export async function ownerDelistListing(carId: string, reason: string, actor: ActorContext): Promise<CarE> {
+  if (!reason || !reason.trim()) {
+    throw new ValidationError('A reason is required to delist a listing.', {
+      source: 'body',
+      fieldErrors: { reason: ['reason is required'] },
+    });
+  }
+  const session = await mongoose.startSession();
+  try {
+    let result!: CarE;
+    await session.withTransaction(async () => {
+      const car = await loadOwnCarOrThrow(carId, actor, session);
+      car.delistedReason = reason;
+      result = await transition({
+        registry: carRegistry,
+        entityType: 'CAR',
+        field: 'listingState',
+        entity: car,
+        to: 'DELISTED',
+        actor,
+        session,
+        reason,
+      });
+    });
+    return result;
+  } finally {
+    await session.endSession();
+  }
+}
+
 export interface ListOwnListingsQuery {
   page?: number | undefined;
   limit?: number | undefined;

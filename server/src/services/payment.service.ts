@@ -5,6 +5,8 @@ import { NotFoundError, ValidationError } from '../lib/errors.js';
 import { Booking, type BookingDoc } from '../models/Booking.model.js';
 import { Payment, type PaymentDoc } from '../models/Payment.model.js';
 import { AuditLog } from '../models/AuditLog.model.js';
+import { transition, transitionWithEdge } from '../transitions/transition.js';
+import { paymentRefundEdge, paymentRegistry } from '../transitions/registry.js';
 
 const AMOUNT_FIELD: Record<PaymentPurpose, 'amountReceived' | 'depositReceived'> = {
   RENTAL: 'amountReceived',
@@ -53,6 +55,10 @@ export async function confirmOfflinePayment(
         });
       }
 
+      // Created PENDING, then routed through the same registry edge
+      // settlePayment() uses (task item 6) — the "one-click" shortcut is one
+      // extra transition() call in the same transaction, not a hand-rolled
+      // status write.
       const [payment] = await Payment.create(
         [
           {
@@ -61,9 +67,8 @@ export async function confirmOfflinePayment(
             paymentMethod: params.paymentMethod,
             direction: 'IN',
             purpose: params.purpose,
-            status: 'SETTLED',
+            status: 'PENDING',
             recordedBy: actor.userId,
-            settledAt: new Date(),
             referenceNote: params.referenceNote,
           },
         ],
@@ -73,27 +78,21 @@ export async function confirmOfflinePayment(
         throw new Error('Payment.create returned no document.');
       }
 
+      await transition({
+        registry: paymentRegistry,
+        entityType: 'PAYMENT',
+        field: 'status',
+        entity: payment,
+        to: 'SETTLED',
+        actor,
+        session,
+        reason: params.referenceNote,
+        metadata: { bookingId: booking._id, purpose: params.purpose, amount: params.amount },
+      });
+
       const field = AMOUNT_FIELD[params.purpose];
       booking.set(field, (booking.get(field) as number) + params.amount);
       await booking.save({ session });
-
-      await AuditLog.create(
-        [
-          {
-            actor: actor.userId,
-            actorRole: actor.role,
-            action: 'PAYMENT_SETTLED',
-            entityType: 'PAYMENT',
-            entityId: payment._id,
-            previousState: undefined,
-            newState: 'SETTLED',
-            reason: params.referenceNote,
-            metadata: { bookingId: booking._id, purpose: params.purpose, amount: params.amount },
-            ipAddress: actor.ip,
-          },
-        ],
-        { session },
-      );
 
       result = { payment, booking };
     });
@@ -189,19 +188,17 @@ export async function recordPayment(
 
 // PAY-07 — PENDING -> SETTLED, updating the booking's amount field for the
 // payment's purpose in the same transaction (D6), by exactly one writer
-// (TR-B3).
+// (TR-B3). Routed through transition()/paymentRegistry (task item 6): a
+// PENDING check is no longer hand-rolled here — an already-SETTLED or -VOID
+// payment simply has no such edge, and transition() step 1 rejects it with
+// 409 INVALID_TRANSITION, which is the correct code for a replayed edge
+// (spec 02 §3.2), not 400 VALIDATION_FAILED.
 export async function settlePayment(paymentId: string, actor: ActorContext) {
   const session = await mongoose.startSession();
   try {
     let result!: { payment: HydratedDocument<PaymentDoc>; booking: HydratedDocument<BookingDoc> };
     await session.withTransaction(async () => {
       const payment = await loadPaymentOrThrow(paymentId, session);
-      if (payment.status !== 'PENDING') {
-        throw new ValidationError('Only a PENDING payment can be settled.', {
-          source: 'body',
-          fieldErrors: { paymentId: [`payment is ${payment.status}`] },
-        });
-      }
       if (payment.direction !== 'IN') {
         throw new ValidationError('Only an inbound (IN) payment can be settled.', {
           source: 'body',
@@ -211,30 +208,20 @@ export async function settlePayment(paymentId: string, actor: ActorContext) {
 
       const booking = await loadBookingOrThrow(String(payment.booking), session);
 
-      payment.status = 'SETTLED';
-      payment.settledAt = new Date();
-      await payment.save({ session });
+      await transition({
+        registry: paymentRegistry,
+        entityType: 'PAYMENT',
+        field: 'status',
+        entity: payment,
+        to: 'SETTLED',
+        actor,
+        session,
+        metadata: { bookingId: booking._id, purpose: payment.purpose, amount: payment.amount },
+      });
 
       const field = AMOUNT_FIELD[payment.purpose];
       booking.set(field, (booking.get(field) as number) + payment.amount);
       await booking.save({ session });
-
-      await AuditLog.create(
-        [
-          {
-            actor: actor.userId,
-            actorRole: actor.role,
-            action: 'PAYMENT_SETTLED',
-            entityType: 'PAYMENT',
-            entityId: payment._id,
-            previousState: 'PENDING',
-            newState: 'SETTLED',
-            metadata: { bookingId: booking._id, purpose: payment.purpose, amount: payment.amount },
-            ipAddress: actor.ip,
-          },
-        ],
-        { session },
-      );
 
       result = { payment, booking };
     });
@@ -261,36 +248,22 @@ export async function voidPayment(paymentId: string, reason: string, actor: Acto
     let result!: HydratedDocument<PaymentDoc>;
     await session.withTransaction(async () => {
       const payment = await loadPaymentOrThrow(paymentId, session);
-      if (payment.status !== 'PENDING') {
-        throw new ValidationError('Only a PENDING payment can be voided.', {
-          source: 'body',
-          fieldErrors: { paymentId: [`payment is ${payment.status}`] },
-        });
-      }
-
-      payment.status = 'VOID';
-      payment.voidedAt = new Date();
+      // voidReason is a persisted field, not just audit metadata, so it is
+      // set before transition() runs (same pattern as Booking's
+      // rejectionReason/cancellationReason ahead of their own transition()
+      // calls) — transition()'s sideEffects only knows (entity, actor).
       payment.voidReason = reason;
-      await payment.save({ session });
 
-      await AuditLog.create(
-        [
-          {
-            actor: actor.userId,
-            actorRole: actor.role,
-            action: 'PAYMENT_VOIDED',
-            entityType: 'PAYMENT',
-            entityId: payment._id,
-            previousState: 'PENDING',
-            newState: 'VOID',
-            reason,
-            ipAddress: actor.ip,
-          },
-        ],
-        { session },
-      );
-
-      result = payment;
+      result = await transition({
+        registry: paymentRegistry,
+        entityType: 'PAYMENT',
+        field: 'status',
+        entity: payment,
+        to: 'VOID',
+        actor,
+        session,
+        reason,
+      });
     });
     return result;
   } finally {
@@ -346,6 +319,11 @@ export async function refundPayment(
 
       const booking = await loadBookingOrThrow(String(original.booking), session);
 
+      // Created PENDING, then routed through paymentRefundEdge —
+      // transitionWithEdge() (not transition()) because this shares its
+      // (from, to) pair with the ordinary settle edge above and needs its
+      // own auditAction (PAYMENT_REFUNDED, not PAYMENT_SETTLED) so the audit
+      // trail can tell "cash in" from "cash out" apart (task item 6).
       const [refund] = await Payment.create(
         [
           {
@@ -354,10 +332,9 @@ export async function refundPayment(
             paymentMethod: original.paymentMethod,
             direction: 'OUT',
             purpose: original.purpose,
-            status: 'SETTLED',
+            status: 'PENDING',
             refundOf: original._id,
             recordedBy: actor.userId,
-            settledAt: new Date(),
             referenceNote: params.referenceNote,
           },
         ],
@@ -367,31 +344,25 @@ export async function refundPayment(
         throw new Error('Payment.create returned no document.');
       }
 
+      await transitionWithEdge({
+        edge: paymentRefundEdge,
+        entityType: 'PAYMENT',
+        field: 'status',
+        entity: refund,
+        actor,
+        session,
+        reason: params.reason,
+        metadata: {
+          bookingId: booking._id,
+          purpose: original.purpose,
+          amount: params.amount,
+          refundOf: String(original._id),
+        },
+      });
+
       const field = AMOUNT_FIELD[original.purpose];
       booking.set(field, (booking.get(field) as number) - params.amount);
       await booking.save({ session });
-
-      await AuditLog.create(
-        [
-          {
-            actor: actor.userId,
-            actorRole: actor.role,
-            action: 'PAYMENT_REFUNDED',
-            entityType: 'PAYMENT',
-            entityId: refund._id,
-            newState: 'SETTLED',
-            reason: params.reason,
-            metadata: {
-              bookingId: booking._id,
-              purpose: original.purpose,
-              amount: params.amount,
-              refundOf: String(original._id),
-            },
-            ipAddress: actor.ip,
-          },
-        ],
-        { session },
-      );
 
       result = { payment: refund, booking };
     });

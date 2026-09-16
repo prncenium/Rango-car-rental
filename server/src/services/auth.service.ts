@@ -291,9 +291,19 @@ export interface UserSummary {
   phone: string;
   role: string;
   isActive: boolean;
-  drivingLicence: { number: string; expiryDate: Date | undefined };
+  drivingLicence: { numberMasked: string; expiryDate: Date | undefined };
   createdAt: Date;
   flags: { isOwner: boolean; isSuperAdmin: boolean };
+}
+
+// spec 02 §7.2's documentNumberMasked pattern, applied to the one licence
+// field this platform still keeps (spec 03 §5.7/X-C4): the full number is
+// never echoed back over the wire — even to its own owner — because echoing
+// it adds nothing the caller does not already know and turns any XSS or log
+// leak into a licence-number disclosure. Only the last 4 characters survive.
+function maskLicenceNumber(number: string): string {
+  const visible = number.slice(-4);
+  return 'X'.repeat(Math.max(0, number.length - visible.length)) + visible;
 }
 
 // spec 03 §2.2 E-05 / §1.4 — flags.isOwner is derived per request, never
@@ -311,7 +321,10 @@ export async function getUserSummary(actor: ActorContext): Promise<UserSummary> 
     phone: user.phone,
     role: user.role,
     isActive: user.isActive,
-    drivingLicence: { number: user.drivingLicence.number, expiryDate: user.drivingLicence.expiryDate },
+    drivingLicence: {
+      numberMasked: maskLicenceNumber(user.drivingLicence.number),
+      expiryDate: user.drivingLicence.expiryDate,
+    },
     createdAt: user.createdAt,
     flags: { isOwner, isSuperAdmin: user.role === 'SUPER_ADMIN' },
   };

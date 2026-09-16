@@ -1,22 +1,49 @@
 import type { HydratedDocument } from 'mongoose';
 import type { CarDoc } from '../models/Car.model.js';
 import type { BookingDoc } from '../models/Booking.model.js';
-import { guardCarApproved, guardNoActiveDayLocks } from './guards/car.guards.js';
+import type { PaymentDoc } from '../models/Payment.model.js';
+import { guardCarApproved, guardNoActiveDayLocks, guardNotListed, guardRegistrationAvailable } from './guards/car.guards.js';
 import {
+  guardCarStillBookable,
   guardDatesNotPast,
   guardEffectiveFromValid,
+  guardLocksIntact,
   guardPaymentCovered,
+  guardRenterActive,
   guardStartDatePassed,
+  guardStartDateReached,
 } from './guards/booking.guards.js';
+import { guardNotOverpaying } from './guards/payment.guards.js';
 import type { TransitionEdge, TransitionRegistry } from './transition.js';
 import { registryKey } from './transition.js';
 
 type CarE = HydratedDocument<CarDoc>;
 type BookingE = HydratedDocument<BookingDoc>;
+type PaymentE = HydratedDocument<PaymentDoc>;
 
 const carRegistry: TransitionRegistry<CarE> = new Map();
 
 carRegistry.set(registryKey('CAR', 'moderationStatus'), [
+  {
+    // CAR-08 / spec 02 E-11 (exception E1) — the owner's own submission for
+    // review. guardRegistrationAvailable is the D3 plate-collision check:
+    // the partial unique index doesn't cover DRAFT, so this is the first
+    // moment a plate collision with another submitted listing is caught.
+    from: 'DRAFT',
+    to: 'PENDING_APPROVAL',
+    actorClasses: ['USER', 'ADMIN', 'SUPER_ADMIN'],
+    guards: [guardRegistrationAvailable],
+    auditAction: 'CAR_SUBMITTED',
+  },
+  {
+    // spec 02 §2.2 — resubmission after rejection re-runs the same plate
+    // check, since the content (and possibly the plate) may have changed.
+    from: 'REJECTED',
+    to: 'PENDING_APPROVAL',
+    actorClasses: ['USER', 'ADMIN', 'SUPER_ADMIN'],
+    guards: [guardRegistrationAvailable],
+    auditAction: 'CAR_SUBMITTED',
+  },
   {
     from: 'PENDING_APPROVAL',
     to: 'APPROVED',
@@ -33,6 +60,31 @@ carRegistry.set(registryKey('CAR', 'moderationStatus'), [
     auditAction: 'CAR_REJECTED',
     sideEffects: (_e, actor) => ({ rejectedBy: actor.userId, rejectedAt: new Date() }),
   },
+  {
+    // spec 02 E-12 (exception E2) — pull an unapproved listing back out of
+    // the review queue.
+    from: 'PENDING_APPROVAL',
+    to: 'DRAFT',
+    actorClasses: ['USER', 'ADMIN', 'SUPER_ADMIN'],
+    guards: [],
+    auditAction: 'CAR_WITHDRAWN',
+  },
+  {
+    // spec 02 E-12 — closes the INV-4 dead end: an APPROVED-but-UNLISTED car
+    // otherwise has no outgoing edge at all (see E-10's re-moderation note).
+    // guardNotListed stops a currently-LISTED car from going straight to
+    // DRAFT (delist first, E-13); guardNoActiveDayLocks stops a car with a
+    // live or future-confirmed rental from being withdrawn out from under it
+    // (CAR-08) — both must hold even though ordinary delist already clears
+    // day-locks, because a *forced* admin delist (E-32) can leave an
+    // APPROVED+UNLISTED car still holding active locks.
+    from: 'APPROVED',
+    to: 'DRAFT',
+    actorClasses: ['USER', 'ADMIN', 'SUPER_ADMIN'],
+    guards: [guardNotListed, guardNoActiveDayLocks],
+    auditAction: 'CAR_WITHDRAWN',
+    sideEffects: () => ({ approvedBy: undefined, approvedAt: undefined }),
+  },
 ]);
 
 carRegistry.set(registryKey('CAR', 'listingState'), [
@@ -46,9 +98,14 @@ carRegistry.set(registryKey('CAR', 'listingState'), [
     sideEffects: () => ({ publishedAt: new Date() }),
   },
   {
+    // Shared by admin delist (E-32, unforced) and owner delist (E-13,
+    // exception E3, CAR-08) — both use the same non-overridable
+    // guardNoActiveDayLocks. E-32's `force: true` override path is a
+    // separate edge selected via transitionWithEdge() when it's added; it is
+    // not part of this pass.
     from: 'LISTED',
     to: 'DELISTED',
-    actorClasses: ['ADMIN', 'SUPER_ADMIN'],
+    actorClasses: ['USER', 'ADMIN', 'SUPER_ADMIN'],
     guards: [guardNoActiveDayLocks],
     auditAction: 'CAR_DELISTED',
     sideEffects: (_e, actor) => ({ delistedBy: actor.userId, delistedAt: new Date() }),
@@ -77,7 +134,11 @@ bookingRegistry.set(registryKey('BOOKING', 'status'), [
     from: 'REQUESTED',
     to: 'CONFIRMED',
     actorClasses: ['ADMIN', 'SUPER_ADMIN'],
-    guards: [guardDatesNotPast],
+    // guardCarStillBookable / guardRenterActive re-check, at confirmation
+    // time, the two facts that can have changed since the request was made:
+    // the car's public-visibility predicate (D2) and the renter's account
+    // state (spec 03 §4.6 — the token is never the authority).
+    guards: [guardDatesNotPast, guardCarStillBookable, guardRenterActive],
     auditAction: 'BOOKING_CONFIRMED',
     sideEffects: (_e, actor) => ({ confirmedBy: actor.userId, confirmedAt: new Date() }),
   },
@@ -128,7 +189,10 @@ bookingRegistry.set(registryKey('BOOKING', 'status'), [
     from: 'CONFIRMED',
     to: 'ACTIVE',
     actorClasses: ['ADMIN', 'SUPER_ADMIN'],
-    guards: [guardPaymentCovered],
+    // guardStartDateReached — a car cannot be handed over before its own
+    // rental period begins. guardLocksIntact — the day-locks taken at
+    // confirm time must still all be present at handover (spec 04 §1.5).
+    guards: [guardPaymentCovered, guardRenterActive, guardStartDateReached, guardLocksIntact],
     auditAction: 'BOOKING_STARTED',
     sideEffects: () => ({ handedOverAt: new Date() }),
   },
@@ -172,9 +236,55 @@ export const bookingActivateUnpaidEdge: TransitionEdge<BookingE> = {
   from: 'CONFIRMED',
   to: 'ACTIVE',
   actorClasses: ['ADMIN', 'SUPER_ADMIN'],
-  guards: [],
+  // The payment guard is what this edge overrides — none of the others are
+  // payment guards and all stay in force on the override path too, per spec
+  // 03 §4.6: the token is never the authority, and no override reason is a
+  // substitute for "this account can still legally take the car" or "the
+  // rental period has actually started with its locks intact."
+  guards: [guardRenterActive, guardStartDateReached, guardLocksIntact],
   auditAction: 'BOOKING_ACTIVATED_UNPAID',
   sideEffects: () => ({ handedOverAt: new Date() }),
 };
 
-export { carRegistry, bookingRegistry };
+// D6/D7 — every payment status write (settle, void, and the SETTLED half of
+// confirm-offline-payment / refund, both of which create a fresh document in
+// PENDING and immediately transition it) goes through this registry rather
+// than a hand-rolled `payment.status = ...; payment.save()` in the service
+// layer, exactly like Car and Booking (spec 04 §6, task item 6).
+const paymentRegistry: TransitionRegistry<PaymentE> = new Map();
+
+paymentRegistry.set(registryKey('PAYMENT', 'status'), [
+  {
+    from: 'PENDING',
+    to: 'SETTLED',
+    actorClasses: ['ADMIN', 'SUPER_ADMIN'],
+    guards: [guardNotOverpaying],
+    auditAction: 'PAYMENT_SETTLED',
+    sideEffects: () => ({ settledAt: new Date() }),
+  },
+  {
+    from: 'PENDING',
+    to: 'VOID',
+    actorClasses: ['ADMIN', 'SUPER_ADMIN'],
+    guards: [],
+    auditAction: 'PAYMENT_VOIDED',
+    sideEffects: () => ({ voidedAt: new Date() }),
+  },
+]);
+
+// PAY-09/D7 — a refund shares (PENDING -> SETTLED) with the ordinary settle
+// edge above but must log as PAYMENT_REFUNDED, not PAYMENT_SETTLED, so the
+// audit trail distinguishes "cash came in" from "cash went back out." Not
+// disambiguable via findEdge() alone (same pattern as
+// bookingActivateUnpaidEdge above) — the service layer selects this edge
+// explicitly via transitionWithEdge() rather than transition().
+export const paymentRefundEdge: TransitionEdge<PaymentE> = {
+  from: 'PENDING',
+  to: 'SETTLED',
+  actorClasses: ['ADMIN', 'SUPER_ADMIN'],
+  guards: [guardNotOverpaying],
+  auditAction: 'PAYMENT_REFUNDED',
+  sideEffects: () => ({ settledAt: new Date() }),
+};
+
+export { carRegistry, bookingRegistry, paymentRegistry };

@@ -1,15 +1,86 @@
-import mongoose, { type ClientSession, type HydratedDocument } from 'mongoose';
+import mongoose, { type ClientSession, type FilterQuery, type HydratedDocument } from 'mongoose';
+import type { Role } from '@rango/shared';
 import type { ActorContext } from '../lib/actor.js';
 import { ConflictError, GuardFailedError, NotFoundError, ValidationError } from '../lib/errors.js';
 import { User, type UserDoc } from '../models/User.model.js';
 import { AuditLog } from '../models/AuditLog.model.js';
-import { guardNotLastAdmin, guardNotLastSuperAdmin } from '../transitions/guards/user.guards.js';
+import {
+  guardNotHigherPrivilege,
+  guardNotLastAdmin,
+  guardNotLastSuperAdmin,
+} from '../transitions/guards/user.guards.js';
 import { runGuards } from '../transitions/runGuards.js';
 
 type UserE = HydratedDocument<UserDoc>;
 
 async function loadUserOrThrow(userId: string, session: ClientSession): Promise<UserE> {
   const user = await User.findById(userId).session(session);
+  if (!user) {
+    throw new NotFoundError('User not found.');
+  }
+  return user;
+}
+
+export interface AdminListUsersQuery {
+  page?: number | undefined;
+  limit?: number | undefined;
+  sort?: string | undefined;
+  role?: string[] | undefined;
+  isActive?: boolean | undefined;
+  q?: string | undefined;
+}
+
+const USERS_SORT_WHITELIST: Record<string, Record<string, 1 | -1>> = {
+  'createdAt:desc': { createdAt: -1 },
+  'name:asc': { name: 1 },
+};
+
+// spec 02 §4.3 — a user-supplied search string must never reach a regex
+// unescaped.
+function escapeRegex(input: string): string {
+  return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// spec 02 E-57 — admin user list. No kycStatus filter here: D8 removed the
+// KYC entity and User.kycStatus along with it, so the field the spec's
+// original DTO filtered on no longer exists.
+export async function adminListUsers(query: AdminListUsersQuery) {
+  const page = query.page && query.page >= 1 ? query.page : 1;
+  const limit = query.limit && query.limit >= 1 && query.limit <= 100 ? query.limit : 20;
+  const sortKey = query.sort && USERS_SORT_WHITELIST[query.sort] ? query.sort : 'createdAt:desc';
+
+  const filter: FilterQuery<UserDoc> = {};
+  if (query.role?.length) {
+    filter.role = { $in: query.role as Role[] };
+  }
+  if (query.isActive !== undefined) {
+    filter.isActive = query.isActive;
+  }
+  if (query.q) {
+    const re = new RegExp(escapeRegex(query.q), 'i');
+    filter.$or = [{ name: re }, { email: re }, { phone: re }];
+  }
+
+  const [data, total] = await Promise.all([
+    User.find(filter)
+      .sort({ ...USERS_SORT_WHITELIST[sortKey], _id: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .lean(),
+    User.countDocuments(filter),
+  ]);
+
+  return {
+    data,
+    meta: { page, limit, total, totalPages: Math.ceil(total / limit), hasNext: page * limit < total, sort: sortKey },
+  };
+}
+
+// spec 02 E-58 — single-record admin read, no ownership scope (any admin may
+// read any user). `passwordHash` stays excluded by the schema's own
+// `select: false` (spec §1.1); nothing here re-selects it.
+export async function adminGetUser(userId: string) {
+  const user = await User.findById(userId).lean();
   if (!user) {
     throw new NotFoundError('User not found.');
   }
@@ -35,7 +106,7 @@ export async function deactivateUser(userId: string, reason: string, actor: Acto
       if (!user.isActive) {
         throw new GuardFailedError('User is already deactivated.', { guard: 'guardAccountCurrentlyActive' });
       }
-      await runGuards([guardNotLastAdmin, guardNotLastSuperAdmin], user, actor, session);
+      await runGuards([guardNotHigherPrivilege, guardNotLastAdmin, guardNotLastSuperAdmin], user, actor, session);
 
       user.isActive = false;
       await user.save({ session });
@@ -137,6 +208,7 @@ export async function reactivateUser(userId: string, actor: ActorContext): Promi
       if (user.isActive) {
         throw new GuardFailedError('User is already active.', { guard: 'guardAccountCurrentlyInactive' });
       }
+      await runGuards([guardNotHigherPrivilege], user, actor, session);
       user.isActive = true;
       user.failedLoginCount = 0;
       user.set('lockedUntil', undefined);

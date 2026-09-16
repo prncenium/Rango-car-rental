@@ -5,7 +5,10 @@ import { app } from '../../src/app.js';
 import { User } from '../../src/models/User.model.js';
 import { Car } from '../../src/models/Car.model.js';
 import { Booking } from '../../src/models/Booking.model.js';
+import { BookingDayLock } from '../../src/models/BookingDayLock.model.js';
 import { AuditLog } from '../../src/models/AuditLog.model.js';
+
+const CSRF_TOKEN = 'test-csrf-token';
 
 function base64UrlEncode(input: Buffer | string): string {
   return Buffer.from(input).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -77,7 +80,7 @@ describe('User endpoints (/api/user/*)', () => {
       const { user, token } = await makeUser();
       const res = await request(app)
         .post('/api/user/listings')
-        .set('Cookie', [`rgo_at=${token}`])
+        .set('Cookie', [`rgo_at=${token}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
         .send(validListingBody());
       expect(res.status).toBe(201);
       expect(res.body.data.moderationStatus).toBe('DRAFT');
@@ -86,7 +89,7 @@ describe('User endpoints (/api/user/*)', () => {
 
       const spoofed = await request(app)
         .post('/api/user/listings')
-        .set('Cookie', [`rgo_at=${token}`])
+        .set('Cookie', [`rgo_at=${token}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
         .send({ ...validListingBody(), owner: 'deadbeefdeadbeefdeadbeef', moderationStatus: 'APPROVED' });
       expect(spoofed.status).toBe(400);
     });
@@ -97,7 +100,7 @@ describe('User endpoints (/api/user/*)', () => {
       await makeCar(String(user._id));
       await makeCar(String(other._id));
 
-      const res = await request(app).get('/api/user/listings').set('Cookie', [`rgo_at=${token}`]);
+      const res = await request(app).get('/api/user/listings').set('Cookie', [`rgo_at=${token}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN);
       expect(res.status).toBe(200);
       expect(res.body.data.length).toBe(1);
       expect(res.body.data[0].owner).toBe(String(user._id));
@@ -110,13 +113,13 @@ describe('User endpoints (/api/user/*)', () => {
 
       const forbidden = await request(app)
         .patch(`/api/user/listings/${car._id}`)
-        .set('Cookie', [`rgo_at=${otherToken}`])
+        .set('Cookie', [`rgo_at=${otherToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
         .send({ description: 'nice car' });
       expect(forbidden.status).toBe(404);
 
       const updated = await request(app)
         .patch(`/api/user/listings/${car._id}`)
-        .set('Cookie', [`rgo_at=${token}`])
+        .set('Cookie', [`rgo_at=${token}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
         .send({ rentalPricePerDay: 1500 });
       expect(updated.status).toBe(200);
       expect(updated.body.data.rentalPricePerDay).toBe(1500);
@@ -131,7 +134,7 @@ describe('User endpoints (/api/user/*)', () => {
 
       const res = await request(app)
         .patch(`/api/user/listings/${car._id}`)
-        .set('Cookie', [`rgo_at=${token}`])
+        .set('Cookie', [`rgo_at=${token}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
         .send({ description: 'nope' });
       expect(res.status).toBe(409);
       expect(res.body.error.details.guard).toBe('guardEditableModerationState');
@@ -141,7 +144,7 @@ describe('User endpoints (/api/user/*)', () => {
       const { user, token } = await makeUser();
       const draft = await makeCar(String(user._id));
 
-      const deleted = await request(app).delete(`/api/user/listings/${draft._id}`).set('Cookie', [`rgo_at=${token}`]);
+      const deleted = await request(app).delete(`/api/user/listings/${draft._id}`).set('Cookie', [`rgo_at=${token}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN);
       expect(deleted.status).toBe(200);
       expect(deleted.body.data.deleted).toBe(true);
       expect(await Car.findById(draft._id)).toBeNull();
@@ -166,9 +169,97 @@ describe('User endpoints (/api/user/*)', () => {
         status: 'REQUESTED',
       });
 
-      const refused = await request(app).delete(`/api/user/listings/${car2._id}`).set('Cookie', [`rgo_at=${token}`]);
+      const refused = await request(app).delete(`/api/user/listings/${car2._id}`).set('Cookie', [`rgo_at=${token}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN);
       expect(refused.status).toBe(409);
       expect(refused.body.error.details.guard).toBe('guardNeverModerated');
+    });
+
+    it('reads a single owned listing; a non-owner gets 404', async () => {
+      const { user, token } = await makeUser();
+      const { token: otherToken } = await makeUser();
+      const car = await makeCar(String(user._id));
+
+      const own = await request(app).get(`/api/user/listings/${car._id}`).set('Cookie', [`rgo_at=${token}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN);
+      expect(own.status).toBe(200);
+      expect(own.body.data.owner).toBe(String(user._id));
+
+      const notOwned = await request(app).get(`/api/user/listings/${car._id}`).set('Cookie', [`rgo_at=${otherToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN);
+      expect(notOwned.status).toBe(404);
+    });
+
+    it('submits a DRAFT for review, rejects a plate collision, and lets the owner withdraw it back to DRAFT', async () => {
+      const { user, token } = await makeUser();
+      const car = await makeCar(String(user._id));
+
+      // Another listing already holds this plate and is not a DRAFT — D3's
+      // partial index does not reserve a plate for a DRAFT, so the collision
+      // is only caught here, at submit time.
+      const { user: other } = await makeUser();
+      await makeCar(String(other._id), { registrationNumber: 'TAKEN123', moderationStatus: 'PENDING_APPROVAL' });
+      const collidingCar = await makeCar(String(user._id), { registrationNumber: 'TAKEN123' });
+
+      const collision = await request(app)
+        .post(`/api/user/listings/${collidingCar._id}/submit`)
+        .set('Cookie', [`rgo_at=${token}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
+        .send({});
+      expect(collision.status).toBe(409);
+      expect(collision.body.error.details.guard).toBe('guardRegistrationAvailable');
+
+      const submitted = await request(app)
+        .post(`/api/user/listings/${car._id}/submit`)
+        .set('Cookie', [`rgo_at=${token}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
+        .send({});
+      expect(submitted.status).toBe(200);
+      expect(submitted.body.data.moderationStatus).toBe('PENDING_APPROVAL');
+
+      const nonOwnerSubmit = await request(app)
+        .post(`/api/user/listings/${car._id}/withdraw`)
+        .set('Cookie', [`rgo_at=${(await makeUser()).token}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
+        .send({});
+      expect(nonOwnerSubmit.status).toBe(404);
+
+      const withdrawn = await request(app)
+        .post(`/api/user/listings/${car._id}/withdraw`)
+        .set('Cookie', [`rgo_at=${token}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
+        .send({});
+      expect(withdrawn.status).toBe(200);
+      expect(withdrawn.body.data.moderationStatus).toBe('DRAFT');
+
+      const log = await AuditLog.findOne({ entityType: 'CAR', entityId: car._id, action: 'CAR_SUBMITTED' });
+      expect(log).not.toBeNull();
+    });
+
+    it('lets the owner delist a LISTED car, and blocks it while a live rental holds day-locks', async () => {
+      const { user, token } = await makeUser();
+      const car = await makeCar(String(user._id), { moderationStatus: 'APPROVED', listingState: 'LISTED' });
+
+      const missingReason = await request(app)
+        .post(`/api/user/listings/${car._id}/delist`)
+        .set('Cookie', [`rgo_at=${token}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
+        .send({});
+      expect(missingReason.status).toBe(400);
+
+      const delisted = await request(app)
+        .post(`/api/user/listings/${car._id}/delist`)
+        .set('Cookie', [`rgo_at=${token}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
+        .send({ reason: 'Taking it off the market for a while' });
+      expect(delisted.status).toBe(200);
+      expect(delisted.body.data.listingState).toBe('DELISTED');
+
+      const relisted = await makeCar(String(user._id), { moderationStatus: 'APPROVED', listingState: 'LISTED' });
+      await BookingDayLock.create({
+        car: relisted._id,
+        day: new Date(),
+        source: 'BOOKING',
+        booking: relisted._id,
+        createdBy: user._id,
+      });
+      const blocked = await request(app)
+        .post(`/api/user/listings/${relisted._id}/delist`)
+        .set('Cookie', [`rgo_at=${token}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
+        .send({ reason: 'trying anyway' });
+      expect(blocked.status).toBe(409);
+      expect(blocked.body.error.details.guard).toBe('guardNoActiveDayLocks');
     });
   });
 
@@ -186,7 +277,7 @@ describe('User endpoints (/api/user/*)', () => {
 
       const res = await request(app)
         .post('/api/user/bookings')
-        .set('Cookie', [`rgo_at=${renterToken}`])
+        .set('Cookie', [`rgo_at=${renterToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
         .send({ carId: String(car._id), startDate: fmt(startDate), endDate: fmt(endDate) });
       expect(res.status).toBe(201);
       expect(res.body.data.status).toBe('REQUESTED');
@@ -200,7 +291,7 @@ describe('User endpoints (/api/user/*)', () => {
       const { token: ownerToken } = { token: signAccessToken({ sub: String(owner._id), role: 'USER', isActive: true }) };
       const selfRental = await request(app)
         .post('/api/user/bookings')
-        .set('Cookie', [`rgo_at=${ownerToken}`])
+        .set('Cookie', [`rgo_at=${ownerToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
         .send({ carId: String(car._id), startDate: fmt(startDate), endDate: fmt(endDate) });
       expect(selfRental.status).toBe(409);
       expect(selfRental.body.error.details.guard).toBe('guardNotOwnRental');
@@ -219,7 +310,7 @@ describe('User endpoints (/api/user/*)', () => {
 
       const res = await request(app)
         .post('/api/user/bookings')
-        .set('Cookie', [`rgo_at=${renterToken}`])
+        .set('Cookie', [`rgo_at=${renterToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
         .send({ carId: String(car._id), startDate: fmt(startDate), endDate: fmt(endDate) });
       expect(res.status).toBe(404);
     });
@@ -246,14 +337,14 @@ describe('User endpoints (/api/user/*)', () => {
         status: 'REQUESTED',
       });
 
-      const asRenter = await request(app).get('/api/user/bookings').set('Cookie', [`rgo_at=${renterToken}`]);
+      const asRenter = await request(app).get('/api/user/bookings').set('Cookie', [`rgo_at=${renterToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN);
       expect(asRenter.status).toBe(200);
       expect(asRenter.body.data.length).toBe(1);
 
-      const asOwnerAsRenter = await request(app).get('/api/user/bookings').set('Cookie', [`rgo_at=${ownerToken}`]);
+      const asOwnerAsRenter = await request(app).get('/api/user/bookings').set('Cookie', [`rgo_at=${ownerToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN);
       expect(asOwnerAsRenter.body.data.length).toBe(0);
 
-      const asOwner = await request(app).get('/api/user/bookings').query({ role: 'OWNER' }).set('Cookie', [`rgo_at=${ownerToken}`]);
+      const asOwner = await request(app).get('/api/user/bookings').query({ role: 'OWNER' }).set('Cookie', [`rgo_at=${ownerToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN);
       expect(asOwner.status).toBe(200);
       expect(asOwner.body.data.length).toBe(1);
     });
@@ -283,14 +374,14 @@ describe('User endpoints (/api/user/*)', () => {
 
       const ownerAttempt = await request(app)
         .post(`/api/user/bookings/${b1._id}/cancel`)
-        .set('Cookie', [`rgo_at=${ownerToken}`])
+        .set('Cookie', [`rgo_at=${ownerToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
         .send({});
       expect(ownerAttempt.status).toBe(403);
       expect(ownerAttempt.body.error.code).toBe('FORBIDDEN_TRANSITION');
 
       const cancelled = await request(app)
         .post(`/api/user/bookings/${b1._id}/cancel`)
-        .set('Cookie', [`rgo_at=${renterToken}`])
+        .set('Cookie', [`rgo_at=${renterToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
         .send({ reason: 'changed my mind' });
       expect(cancelled.status).toBe(200);
       expect(cancelled.body.data.status).toBe('CANCELLED');
@@ -310,7 +401,7 @@ describe('User endpoints (/api/user/*)', () => {
       });
       const confirmedAttempt = await request(app)
         .post(`/api/user/bookings/${b2._id}/cancel`)
-        .set('Cookie', [`rgo_at=${renterToken}`])
+        .set('Cookie', [`rgo_at=${renterToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
         .send({});
       expect(confirmedAttempt.status).toBe(409);
       expect(confirmedAttempt.body.error.code).toBe('INVALID_TRANSITION');
@@ -321,20 +412,20 @@ describe('User endpoints (/api/user/*)', () => {
     it('reads and updates the caller\'s own profile; email/role/status are rejected', async () => {
       const { user, token } = await makeUser();
 
-      const read = await request(app).get('/api/user/profile').set('Cookie', [`rgo_at=${token}`]);
+      const read = await request(app).get('/api/user/profile').set('Cookie', [`rgo_at=${token}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN);
       expect(read.status).toBe(200);
       expect(read.body.data.email).toBe(user.email);
 
       const updated = await request(app)
         .patch('/api/user/profile')
-        .set('Cookie', [`rgo_at=${token}`])
+        .set('Cookie', [`rgo_at=${token}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
         .send({ name: 'New Name' });
       expect(updated.status).toBe(200);
       expect(updated.body.data.name).toBe('New Name');
 
       const rejected = await request(app)
         .patch('/api/user/profile')
-        .set('Cookie', [`rgo_at=${token}`])
+        .set('Cookie', [`rgo_at=${token}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
         .send({ email: 'new@example.com' });
       expect(rejected.status).toBe(400);
 
@@ -348,7 +439,7 @@ describe('User endpoints (/api/user/*)', () => {
 
       const res = await request(app)
         .patch('/api/user/profile')
-        .set('Cookie', [`rgo_at=${token}`])
+        .set('Cookie', [`rgo_at=${token}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
         .send({ phone: other.phone });
       expect(res.status).toBe(409);
       expect(res.body.error.details.field).toBe('phone');

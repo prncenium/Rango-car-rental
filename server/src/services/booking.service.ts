@@ -349,8 +349,7 @@ export interface RequestBookingInput {
 // guardRenterKycVerified (there is no KYC entity — D8 is void in full):
 // guardCarPubliclyBookable, guardNotOwnRental, guardDateRangeValid,
 // guardNoExistingRequestForRange, guardOpenRequestCap, guardNoUnresolvedNoShow,
-// guardNoOverdueRental. guardNoOverlappingRentalAnyCar (spec 04 §3.1's most
-// expensive precondition, cross-car) is deliberately deferred out of this pass.
+// guardNoOverdueRental, guardNoOverlappingRentalAnyCar.
 export async function requestBooking(actor: ActorContext, input: RequestBookingInput): Promise<BookingE> {
   const startDate = toUtcMidnight(new Date(input.startDate));
   const endDate = toUtcMidnight(new Date(input.endDate));
@@ -451,6 +450,24 @@ export async function requestBooking(actor: ActorContext, input: RequestBookingI
       if (hasOverdueRental) {
         throw new GuardFailedError('An overdue rental is blocking new requests.', {
           guard: 'guardNoOverdueRental',
+        });
+      }
+
+      // guardNoOverlappingRentalAnyCar — a renter cannot hold two cars' worth
+      // of CONFIRMED/ACTIVE days at once (spec 04 §8 trade-offs). Unlike
+      // guardNoExistingRequestForRange above (same car), this checks across
+      // every car the renter has committed to; REQUESTED never counts here
+      // because it holds no locks and binds nothing (RULE AV-1).
+      const overlappingAnyCar = await Booking.exists({
+        renter: actor.userId,
+        status: { $in: ['CONFIRMED', 'ACTIVE'] },
+        startDate: { $lt: endDate },
+        endDate: { $gt: startDate },
+      }).session(session);
+      if (overlappingAnyCar) {
+        throw new GuardFailedError('You already hold a confirmed or active rental during these dates.', {
+          guard: 'guardNoOverlappingRentalAnyCar',
+          bookingId: overlappingAnyCar._id,
         });
       }
 

@@ -84,6 +84,20 @@ export const guardNoLiveRentalOnPriceChange: Guard<CarE> = {
   },
 };
 
+// spec 02 E-12 — a car currently on the market cannot be withdrawn from
+// moderation without being delisted first (E-13/E-32): withdrawing it
+// straight to DRAFT would leave a LISTED flag on a car no longer under
+// moderation, which is the concrete form of the E-12 guard note.
+export const guardNotListed: Guard<CarE> = {
+  name: 'guardNotListed',
+  check: (entity) => {
+    if (entity.listingState === 'LISTED') {
+      return { ok: false, details: { listingState: entity.listingState, hint: 'Delist via /api/user/listings/:carId/delist' } };
+    }
+    return { ok: true };
+  },
+};
+
 // spec 02 E-16 — the hard-delete exception is narrow on purpose: a listing no
 // admin has ever seen. Three independent guards, all of which must hold.
 export const guardNeverModerated: Guard<CarE> = {

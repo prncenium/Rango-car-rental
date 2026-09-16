@@ -1,9 +1,58 @@
 import type { HydratedDocument } from 'mongoose';
 import type { BookingDoc } from '../../models/Booking.model.js';
+import { User } from '../../models/User.model.js';
+import { Car } from '../../models/Car.model.js';
+import { BookingDayLock } from '../../models/BookingDayLock.model.js';
 import { toUtcMidnight } from '../../lib/dayLocks.js';
 import type { Guard } from './types.js';
 
 type BookingE = HydratedDocument<BookingDoc>;
+
+// spec 04 §3.2 — the car's public-visibility predicate can change between a
+// REQUESTED booking being created and an admin confirming it (edit sent it
+// back to PENDING_APPROVAL, or it was delisted). Confirming must re-check
+// D2's predicate at the moment of confirmation, not trust the state it was
+// in when the request was made.
+export const guardCarStillBookable: Guard<BookingE> = {
+  name: 'guardCarStillBookable',
+  check: async (entity, _actor, session) => {
+    const car = await Car.findById(entity.car).session(session);
+    if (!car || car.moderationStatus !== 'APPROVED' || car.listingState !== 'LISTED') {
+      return { ok: false, details: { reason: 'CAR_NOT_BOOKABLE' } };
+    }
+    return { ok: true };
+  },
+};
+
+// design §6 / spec 04 §3.3 — a car cannot be handed over before its own
+// rental period has started.
+export const guardStartDateReached: Guard<BookingE> = {
+  name: 'guardStartDateReached',
+  check: (entity) => {
+    const today = toUtcMidnight(new Date());
+    if (today.getTime() < toUtcMidnight(entity.startDate).getTime()) {
+      return { ok: false, details: { startDate: entity.startDate } };
+    }
+    return { ok: true };
+  },
+};
+
+// spec 04 §1.5 — the day-locks taken at confirm time must still all be in
+// place at handover. Counts `source: BOOKING` rows only (never BUFFER): a
+// buffer day legitimately converted to an ADMIN_BLOCK, or skipped by a
+// best-effort re-insert, must not make a correct booking look tampered with.
+export const guardLocksIntact: Guard<BookingE> = {
+  name: 'guardLocksIntact',
+  check: async (entity, _actor, session) => {
+    const foundDays = await BookingDayLock.countDocuments({ booking: entity._id, source: 'BOOKING' }).session(
+      session,
+    );
+    if (foundDays !== entity.days) {
+      return { ok: false, details: { expectedDays: entity.days, foundDays } };
+    }
+    return { ok: true };
+  },
+};
 
 // spec 04 §6.1's confirm-time guard: a request whose own startDate has
 // already passed can never be confirmed (it just accumulates as "stale").
@@ -27,6 +76,22 @@ export const guardPaymentCovered: Guard<BookingE> = {
   check: (entity) => {
     if (entity.amountReceived < entity.totalAmount) {
       return { ok: false, details: { required: entity.totalAmount, received: entity.amountReceived } };
+    }
+    return { ok: true };
+  },
+};
+
+// spec 03 §4.6 / DEFECT-2 — the access token's `isActive` claim is a
+// 15-minute-stale snapshot and is never a guard's authority. A renter
+// deactivated between confirm and handover must not receive the car, so this
+// re-reads User.isActive from the database, inside the same transaction as
+// the CONFIRMED -> ACTIVE write, rather than trusting anything cached.
+export const guardRenterActive: Guard<BookingE> = {
+  name: 'guardRenterActive',
+  check: async (entity, _actor, session) => {
+    const renter = await User.findById(entity.renter).session(session);
+    if (!renter || !renter.isActive) {
+      return { ok: false, details: { reason: 'RENTER_INACTIVE' } };
     }
     return { ok: true };
   },

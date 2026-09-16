@@ -10,6 +10,10 @@ export interface ActorContext {
   role: Role;
   isActive: boolean;
   ip?: string | undefined;
+  // Session._id from the access token's `sid` claim (spec 03 §4.4). Used by
+  // requireActiveSession (middleware/auth.ts) to close the access-token
+  // revocation gap on /api/admin and /api/superadmin (spec 03 §4.5 option b).
+  sessionId?: Types.ObjectId | undefined;
 }
 
 export function isAdminActor(actor: ActorContext): boolean {

@@ -1,7 +1,9 @@
 import type { NextFunction, Request, Response } from 'express';
+import { Types } from 'mongoose';
 import { verifyAccessToken } from '../lib/jwt.js';
 import { AccountInactiveError, AuthError, ForbiddenError } from '../lib/errors.js';
 import { User } from '../models/User.model.js';
+import { Session } from '../models/Session.model.js';
 import type { ActorContext } from '../lib/actor.js';
 
 declare module 'express-serve-static-core' {
@@ -32,7 +34,30 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
       role: user.role,
       isActive: user.isActive,
       ip: req.ip,
+      sessionId: payload.sid && Types.ObjectId.isValid(payload.sid) ? new Types.ObjectId(payload.sid) : undefined,
     };
+    next();
+  } catch (err) {
+    next(err);
+  }
+}
+
+// spec 03 §4.5 "the access-token gap" — revoking a Session does not
+// invalidate an already-issued rgo_at, which stays signature-valid for up to
+// 15 minutes. This document adopts option (b) for /api/admin and
+// /api/superadmin only: one extra indexed read per request closes the gap to
+// zero for the two namespaces where a just-revoked admin token retaining
+// moderation authority is the material risk. /api/user and /api/auth keep
+// option (a) (requireActive's DB re-read is enough there).
+export async function requireActiveSession(req: Request, _res: Response, next: NextFunction): Promise<void> {
+  try {
+    if (!req.actor?.sessionId) {
+      throw new AuthError('Authentication required.');
+    }
+    const session = await Session.findById(req.actor.sessionId).select('status');
+    if (!session || session.status !== 'ACTIVE') {
+      throw new AuthError('This session has been revoked.');
+    }
     next();
   } catch (err) {
     next(err);
