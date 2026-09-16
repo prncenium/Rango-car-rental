@@ -17,6 +17,8 @@ const POLL_INTERVAL_MS = 30_000;
 const NAV_ITEMS = [
   { to: '/admin/dashboard', label: 'Dashboard', countKey: null as null },
   { to: '/admin/listings', label: 'Listings', countKey: 'listingsPending' as const },
+  { to: '/admin/bookings', label: 'Bookings', countKey: 'bookingsRequested' as const },
+  { to: '/admin/calendar', label: 'Calendar', countKey: null as null },
 ] as const;
 
 export function AdminShell({ children }: { children: ReactNode }) {

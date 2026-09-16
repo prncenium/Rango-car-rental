@@ -5,10 +5,90 @@ import { ConflictError, NotFoundError, ValidationError } from '../lib/errors.js'
 import { Car } from '../models/Car.model.js';
 import { BookingDayLock } from '../models/BookingDayLock.model.js';
 import { AuditLog } from '../models/AuditLog.model.js';
-import { expandRange } from '../lib/dayLocks.js';
+import { expandRange, toUtcMidnight } from '../lib/dayLocks.js';
 
 function fmt(d: Date): string {
   return d.toISOString().slice(0, 10);
+}
+
+// spec 05.5 §4.1 E-36 — admin variant of the public availability read
+// (publicCar.service.ts's getPublicAvailability): no visibility filter (an
+// admin can inspect any car regardless of moderation/listing state), and
+// each blockedRange additionally discloses source/bookingId/blockId/reason
+// — the one place a blocked day's cause is shown (spec 04 §1.2). Window cap
+// is wider than the public 180-day cap since an admin has an operational
+// reason to see further out (spec 05.5 §4.1).
+const MAX_ADMIN_AVAILABILITY_WINDOW_DAYS = 365;
+
+export interface AdminAvailabilityRange {
+  from: string;
+  to: string;
+  source: 'BOOKING' | 'BUFFER' | 'ADMIN_BLOCK';
+  bookingId?: string;
+  blockId?: string;
+  reason?: string;
+}
+
+export async function getAdminAvailability(carId: string, from: string, to: string) {
+  const car = await Car.findById(carId).lean();
+  if (!car) {
+    throw new NotFoundError('Car not found.');
+  }
+
+  const fromDate = new Date(from);
+  const toDate = new Date(to);
+  if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime()) || toDate.getTime() <= fromDate.getTime()) {
+    throw new ValidationError('Invalid date range.', {
+      source: 'query',
+      fieldErrors: { to: ['must be a valid date after from'] },
+    });
+  }
+
+  const windowDays = Math.round((toUtcMidnight(toDate).getTime() - toUtcMidnight(fromDate).getTime()) / 86_400_000);
+  if (windowDays > MAX_ADMIN_AVAILABILITY_WINDOW_DAYS) {
+    throw new ValidationError(`Availability window cannot exceed ${MAX_ADMIN_AVAILABILITY_WINDOW_DAYS} days.`, {
+      source: 'query',
+      fieldErrors: { to: [`window must not exceed ${MAX_ADMIN_AVAILABILITY_WINDOW_DAYS} days`] },
+    });
+  }
+
+  const days = expandRange(fromDate, toDate);
+  const locks = await BookingDayLock.find({ car: carId, day: { $in: days } })
+    .sort({ day: 1 })
+    .lean();
+
+  const blockedDays = locks.map((l) => fmt(l.day));
+
+  // Ranges only collapse across contiguous days sharing the same source and
+  // origin (booking/block) — unlike the public collapse, which can merge any
+  // contiguous run because it never discloses why a day is blocked.
+  const blockedRanges: AdminAvailabilityRange[] = [];
+  for (const lock of locks) {
+    const dayTime = lock.day.getTime();
+    const bookingId = lock.booking ? String(lock.booking) : undefined;
+    const last = blockedRanges.at(-1);
+    const sameGroup =
+      last &&
+      new Date(`${last.to}T00:00:00.000Z`).getTime() === dayTime &&
+      last.source === lock.source &&
+      last.bookingId === bookingId &&
+      last.blockId === lock.blockId;
+
+    if (sameGroup && last) {
+      last.to = fmt(new Date(dayTime + 86_400_000));
+    } else {
+      blockedRanges.push({
+        from: fmt(lock.day),
+        to: fmt(new Date(dayTime + 86_400_000)),
+        source: lock.source,
+        ...(bookingId ? { bookingId } : {}),
+        ...(lock.blockId ? { blockId: lock.blockId } : {}),
+        ...(lock.reason ? { reason: lock.reason } : {}),
+      });
+    }
+  }
+
+  return { carId: String(car._id), from, to, blockedDays, blockedRanges };
 }
 
 // spec 04 §1.6 — an admin taking a car off the calendar without taking it off

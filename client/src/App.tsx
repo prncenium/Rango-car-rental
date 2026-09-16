@@ -13,6 +13,9 @@ import { ProfilePage } from './pages/user/Profile';
 import { AdminDashboardPage } from './pages/admin/Dashboard';
 import { AdminListingModerationPage } from './pages/admin/ListingModeration';
 import { AdminListingDetailPage } from './pages/admin/ListingDetail';
+import { AdminBookingQueuePage } from './pages/admin/BookingManagement';
+import { AdminBookingDetailPage } from './pages/admin/BookingDetail';
+import { AdminCalendarPage } from './pages/admin/Calendar';
 
 export function App() {
   return (
@@ -36,6 +39,9 @@ export function App() {
       <Route path="/admin/dashboard" element={<AdminDashboardPage />} />
       <Route path="/admin/listings" element={<AdminListingModerationPage />} />
       <Route path="/admin/listings/:carId" element={<AdminListingDetailPage />} />
+      <Route path="/admin/bookings" element={<AdminBookingQueuePage />} />
+      <Route path="/admin/bookings/:bookingId" element={<AdminBookingDetailPage />} />
+      <Route path="/admin/calendar" element={<AdminCalendarPage />} />
     </Routes>
   );
 }

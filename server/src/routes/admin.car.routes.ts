@@ -10,7 +10,7 @@ import {
   rejectCar,
   relistCar,
 } from '../services/car.service.js';
-import { createAvailabilityBlock, deleteAvailabilityBlock } from '../services/availability.service.js';
+import { createAvailabilityBlock, deleteAvailabilityBlock, getAdminAvailability } from '../services/availability.service.js';
 
 const router = Router();
 
@@ -109,6 +109,25 @@ router.post('/:carId/relist', async (req, res, next) => {
     const { carId } = carIdParams.parse(req.params);
     const car = await relistCar(carId, req.actor!);
     res.status(200).json({ data: car });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// spec 05.5 §4.1 E-36 — admin read of a car's availability, disclosing
+// source/bookingId/blockId/reason per range (the public E-08 variant never
+// does). Window capped wider than public's 180 days (§4.1).
+const availabilityQuery = z.strictObject({
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+});
+
+router.get('/:carId/availability', async (req, res, next) => {
+  try {
+    const { carId } = carIdParams.parse(req.params);
+    const { from, to } = availabilityQuery.parse(req.query);
+    const result = await getAdminAvailability(carId, from, to);
+    res.status(200).json({ data: result });
   } catch (err) {
     next(err);
   }
