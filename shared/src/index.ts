@@ -28,3 +28,4 @@ export * from './entities/passwordReset.entity.js';
 export * from './entities/systemConfig.entity.js';
 
 export * from './dto/auth.js';
+export * from './dto/car.js';

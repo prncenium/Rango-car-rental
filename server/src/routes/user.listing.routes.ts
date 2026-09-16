@@ -1,7 +1,7 @@
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
-import { CAR_FUEL_TYPES, CAR_LISTING_STATES, CAR_MODERATION_STATUSES, CAR_TRANSMISSIONS, objectIdSchema } from '@rango/shared';
+import { CAR_LISTING_STATES, CAR_MODERATION_STATUSES, createCarDto, objectIdSchema, updateCarDto } from '@rango/shared';
 import {
   addListingImages,
   createListing,
@@ -21,62 +21,16 @@ const router = Router();
 const carIdParams = z.object({ carId: objectIdSchema });
 const reasonBody = z.strictObject({ reason: z.string().min(1).max(500) });
 
-const carLocationSchema = z.strictObject({
-  city: z.string().trim().min(1),
-  state: z.string().trim().min(1),
-  geo: z
-    .strictObject({ type: z.literal('Point'), coordinates: z.tuple([z.number(), z.number()]) })
-    .optional(),
-});
-
-// spec 02 E-09 — owner/status fields are absent here entirely (D10): they are
-// never accepted from the body, not merely stripped. `images` URLs are
-// format-checked only; the full storage-host allowlist guard
-// (guardImageUrlsAllowed, X-B6) is deferred out of this pass.
-const createListingBody = z
-  .strictObject({
-    make: z.string().trim().min(1),
-    model: z.string().trim().min(1),
-    year: z.number().int().gte(1900).lte(9999),
-    registrationNumber: z.string().trim().min(1),
-    color: z.string().trim().optional(),
-    transmission: z.enum(CAR_TRANSMISSIONS),
-    fuelType: z.enum(CAR_FUEL_TYPES),
-    seats: z.number().int().positive(),
-    mileageKm: z.number().min(0),
-    images: z.array(z.string().url()).min(1),
-    description: z.string().optional(),
-    location: carLocationSchema,
-    rentalPricePerDay: z.number().positive(),
-    rentalPricePerWeek: z.number().positive().optional(),
-    depositAmount: z.number().min(0).optional(),
-  })
-  .refine((v) => v.rentalPricePerWeek === undefined || v.rentalPricePerWeek < v.rentalPricePerDay * 7, {
-    message: 'rentalPricePerWeek must be less than 7x rentalPricePerDay',
-    path: ['rentalPricePerWeek'],
-  });
-
-// spec 02 E-10 — every field optional, minimum one present. No status field,
-// no owner — neither is even a key in this schema.
-const updateListingBody = z
-  .strictObject({
-    make: z.string().trim().min(1).optional(),
-    model: z.string().trim().min(1).optional(),
-    year: z.number().int().gte(1900).lte(9999).optional(),
-    registrationNumber: z.string().trim().min(1).optional(),
-    color: z.string().trim().optional(),
-    transmission: z.enum(CAR_TRANSMISSIONS).optional(),
-    fuelType: z.enum(CAR_FUEL_TYPES).optional(),
-    seats: z.number().int().positive().optional(),
-    mileageKm: z.number().min(0).optional(),
-    images: z.array(z.string().url()).min(1).optional(),
-    description: z.string().optional(),
-    location: carLocationSchema.optional(),
-    rentalPricePerDay: z.number().positive().optional(),
-    rentalPricePerWeek: z.number().positive().optional(),
-    depositAmount: z.number().min(0).optional(),
-  })
-  .refine((v) => Object.keys(v).length > 0, { message: 'At least one field is required.' });
+// spec 02 E-09/E-10 — owner/status fields are absent here entirely (D10):
+// they are never accepted from the body, not merely stripped. `images` URLs
+// are format-checked only; the full storage-host allowlist guard
+// (guardImageUrlsAllowed, X-B6) is deferred out of this pass. Both schemas
+// now live in `@rango/shared` (docs/design/01-technical-design.md §8.1's
+// schema-sharing pattern) so the client form validates against the exact
+// same rules this route enforces — see shared/src/dto/car.ts for the
+// `images` relaxation note (specs/05-ui-ux-public.md §3.7 OQ1, BLOCKING).
+const createListingBody = createCarDto;
+const updateListingBody = updateCarDto;
 
 const listQuery = z.strictObject({
   page: z.coerce.number().int().min(1).optional(),

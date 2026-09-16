@@ -65,10 +65,6 @@ function OwnerDashboard() {
               </option>
             ))}
           </Select>
-          {/* spec 05 §3.6 / route map — Create Listing isn't built in this
-              pass (task scope: "no listing form or image upload yet"). This
-              link mirrors Home.tsx's existing forward-reference to the same
-              not-yet-built route. */}
           <Link to="/account/listings/new">
             <Button variant="primary" size="sm">
               + List a car
@@ -138,6 +134,20 @@ function OwnerDashboard() {
                 )}
                 {car.listingState === 'DELISTED' && car.delistedReason && (
                   <p className="mt-1 text-body-sm text-neutral-500">Delisted: "{car.delistedReason}"</p>
+                )}
+
+                {/* spec 05 §3.6 — Edit is only ever reachable while
+                    DRAFT/REJECTED (guardEditableModerationState); everywhere
+                    else it's absent rather than disabled-with-tooltip, since
+                    the full action menu isn't built in this pass. */}
+                {(car.moderationStatus === 'DRAFT' || car.moderationStatus === 'REJECTED') && (
+                  <div className="mt-3">
+                    <Link to={`/account/listings/${car.id}/edit`}>
+                      <Button variant="secondary" size="sm">
+                        Edit
+                      </Button>
+                    </Link>
+                  </div>
                 )}
               </li>
             );

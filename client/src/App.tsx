@@ -8,6 +8,7 @@ import { CarDetailPage } from './pages/public/CarDetail';
 import { BookingRequestPage } from './pages/public/BookingRequest';
 import { RenterDashboardPage } from './pages/user/RenterDashboard';
 import { OwnerDashboardPage } from './pages/user/OwnerDashboard';
+import { CreateListingPage, EditListingPage } from './pages/user/ListingForm';
 import { ProfilePage } from './pages/user/Profile';
 
 export function App() {
@@ -25,6 +26,8 @@ export function App() {
       <Route path="/account" element={<Navigate to="/account/bookings" replace />} />
       <Route path="/account/bookings" element={<RenterDashboardPage />} />
       <Route path="/account/listings" element={<OwnerDashboardPage />} />
+      <Route path="/account/listings/new" element={<CreateListingPage />} />
+      <Route path="/account/listings/:carId/edit" element={<EditListingPage />} />
       <Route path="/account/profile" element={<ProfilePage />} />
     </Routes>
   );

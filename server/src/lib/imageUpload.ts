@@ -1,5 +1,6 @@
 import { v2 as cloudinary } from 'cloudinary';
 import multer from 'multer';
+import { CAR_IMAGE_MAX_FILE_SIZE_BYTES, CAR_IMAGE_MIME_TYPES } from '@rango/shared';
 import { env } from '../config/env.js';
 import { UnsupportedMediaTypeError } from './errors.js';
 
@@ -11,8 +12,10 @@ cloudinary.config({
   api_secret: env.CLOUDINARY_API_SECRET,
 });
 
-const ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
-const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
+// Sourced from @rango/shared so the client's pre-validation (PhotoUploader)
+// can never drift from what the server actually enforces.
+const ALLOWED_MIME_TYPES = new Set<string>(CAR_IMAGE_MIME_TYPES);
+const MAX_FILE_SIZE_BYTES = CAR_IMAGE_MAX_FILE_SIZE_BYTES;
 
 // Absolute request-level ceiling, independent of SystemConfig.listing.maxImagesPerCar
 // (that value is read at call time in car.service.ts) — this just bounds how much
