@@ -98,7 +98,12 @@ function Dashboard() {
       </section>
 
       <section className="mt-10" aria-label="Today's activity">
-        <h2 className="font-display text-heading-sm text-neutral-900">Today's activity</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="font-display text-heading-sm text-neutral-900">Today's activity</h2>
+          <Link to="/admin/audit" className="text-body-sm font-medium text-brand-accent hover:text-brand-accent-hover">
+            Audit log →
+          </Link>
+        </div>
         <div className="mt-3">
           {activityQuery.isLoading && (
             <div className="space-y-2">
@@ -116,7 +121,7 @@ function Dashboard() {
           {activityQuery.data && activityQuery.data.data.length > 0 && (
             <ul className="divide-y divide-border rounded-none border border-border bg-surface-card">
               {activityQuery.data.data.map((entry) => (
-                <li key={entry.id} className="flex flex-wrap items-center gap-2 px-3 py-2 text-body-sm">
+                <li key={entry._id} className="flex flex-wrap items-center gap-2 px-3 py-2 text-body-sm">
                   <span className="font-mono text-mono-sm text-neutral-500">
                     {new Date(entry.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                   </span>

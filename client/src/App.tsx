@@ -16,6 +16,7 @@ import { AdminListingDetailPage } from './pages/admin/ListingDetail';
 import { AdminBookingQueuePage } from './pages/admin/BookingManagement';
 import { AdminBookingDetailPage } from './pages/admin/BookingDetail';
 import { AdminCalendarPage } from './pages/admin/Calendar';
+import { AdminAuditLogPage } from './pages/admin/AuditLog';
 
 export function App() {
   return (
@@ -42,6 +43,7 @@ export function App() {
       <Route path="/admin/bookings" element={<AdminBookingQueuePage />} />
       <Route path="/admin/bookings/:bookingId" element={<AdminBookingDetailPage />} />
       <Route path="/admin/calendar" element={<AdminCalendarPage />} />
+      <Route path="/admin/audit" element={<AdminAuditLogPage />} />
     </Routes>
   );
 }

@@ -84,15 +84,26 @@ function ListingDetail() {
     setActiveAction(null);
   }
 
-  function onMutationError(err: unknown) {
-    // RULE ADM-2 — roll back to server truth rather than trust the optimistic
-    // guess: re-fetch so stale availableActions/state don't linger.
-    detailQuery.refetch();
+  // RULE ADM-2 (spec 05.5 §0.5) — the action's effect on this record is
+  // applied to the cache immediately, before the response returns, and
+  // rolled back to the pre-action snapshot on error (rather than trusting
+  // an optimistic guess to still be right after a real error).
+  function onMutate(patch: Partial<AdminCar>) {
+    const previous = queryClient.getQueryData<AdminCar>(['admin-listing', carId]);
+    if (previous) queryClient.setQueryData<AdminCar>(['admin-listing', carId], { ...previous, ...patch });
+    return { previous };
+  }
+
+  function onMutationError(err: unknown, _vars: unknown, context: unknown) {
+    const previous = (context as { previous?: AdminCar } | undefined)?.previous;
+    if (previous) queryClient.setQueryData(['admin-listing', carId], previous);
+    else detailQuery.refetch();
     pushToast('danger', errorToastText(err));
   }
 
   const approveMutation = useMutation({
     mutationFn: () => approveListing(carId!),
+    onMutate: () => onMutate({ moderationStatus: 'APPROVED' }),
     onSuccess: (car) =>
       onMutationSuccess(car, "Approved. This won't appear publicly until you also publish it."),
     onError: onMutationError,
@@ -100,24 +111,28 @@ function ListingDetail() {
 
   const rejectMutation = useMutation({
     mutationFn: (reason: string) => rejectListing(carId!, reason),
+    onMutate: () => onMutate({ moderationStatus: 'REJECTED' }),
     onSuccess: (car) => onMutationSuccess(car, 'Listing rejected. The owner will see your reason text.'),
     onError: onMutationError,
   });
 
   const publishMutation = useMutation({
     mutationFn: () => publishListing(carId!),
+    onMutate: () => onMutate({ listingState: 'LISTED' }),
     onSuccess: (car) => onMutationSuccess(car, 'Listing is now live and bookable.'),
     onError: onMutationError,
   });
 
   const delistMutation = useMutation({
     mutationFn: (reason: string) => delistListing(carId!, reason),
+    onMutate: () => onMutate({ listingState: 'DELISTED' }),
     onSuccess: (car) => onMutationSuccess(car, 'Listing delisted.'),
     onError: onMutationError,
   });
 
   const relistMutation = useMutation({
     mutationFn: () => relistListing(carId!),
+    onMutate: () => onMutate({ listingState: 'LISTED' }),
     onSuccess: (car) => onMutationSuccess(car, 'Listing relisted and visible again.'),
     onError: onMutationError,
   });

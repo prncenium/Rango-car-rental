@@ -144,9 +144,13 @@ export function relistListing(carId: string): Promise<AdminCar> {
 // GET /api/admin/audit (ADM-01) — used by the Dashboard's "today's
 // activity" feed (spec 05.5 §1.3), pre-scoped to today client-side via
 // createdAtFrom.
+// Straight off `AuditLog.find(...).populate('actor', ...).lean()` with no
+// `_id`->`id` mapping layer (server/src/services/audit.service.ts) — same
+// "carries Mongo's `_id` verbatim" shape as AdminBookingListItem below, not
+// the mapped `AdminCar` shape.
 export interface AuditLogEntry {
-  id: string;
-  actor: { id: string; name: string; email: string; role: string } | string;
+  _id: string;
+  actor: { _id: string; name: string; email: string; role: string } | string;
   actorRole: string;
   action: string;
   entityType: string;
@@ -154,11 +158,18 @@ export interface AuditLogEntry {
   previousState?: string;
   newState?: string;
   reason?: string;
+  metadata?: Record<string, unknown>;
+  ipAddress?: string;
   createdAt: string;
 }
 
+// entityId requires entityType server-side (guardEntityIdRequiresEntityType
+// — spec 05.5 §6.1) or the query 400s; the page enforces that in its filter
+// UI rather than letting the request go out malformed.
 export interface AdminAuditQuery {
   entityType?: string | undefined;
+  entityId?: string | undefined;
+  actor?: string | undefined;
   action?: string | undefined;
   createdAtFrom?: string | undefined;
   createdAtTo?: string | undefined;

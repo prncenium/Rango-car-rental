@@ -97,14 +97,25 @@ function BookingDetail() {
     setActiveAction(null);
   }
 
-  function onMutationError(err: unknown) {
-    // RULE ADM-2 — roll back to server truth rather than trust a guess.
-    detailQuery.refetch();
+  // RULE ADM-2 (spec 05.5 §0.5) — the status change is applied to the cache
+  // immediately, before the response returns, and rolled back to the
+  // pre-action snapshot on error.
+  function onMutate(patch: Partial<AdminBookingDetail>) {
+    const previous = queryClient.getQueryData<AdminBookingDetail>(['admin-booking', bookingId]);
+    if (previous) queryClient.setQueryData<AdminBookingDetail>(['admin-booking', bookingId], { ...previous, ...patch });
+    return { previous };
+  }
+
+  function onMutationError(err: unknown, _vars: unknown, context: unknown) {
+    const previous = (context as { previous?: AdminBookingDetail } | undefined)?.previous;
+    if (previous) queryClient.setQueryData(['admin-booking', bookingId], previous);
+    else detailQuery.refetch();
     pushToast('danger', errorToastText(err));
   }
 
   const confirmMutation = useMutation({
     mutationFn: () => confirmBooking(bookingId!),
+    onMutate: () => onMutate({ status: 'CONFIRMED' }),
     onSuccess: (b) =>
       onMutationSuccess(b, "Confirmed. Both parties can now see each other's phone number."),
     onError: onMutationError,
@@ -112,18 +123,21 @@ function BookingDetail() {
 
   const rejectMutation = useMutation({
     mutationFn: (reason: string) => rejectBooking(bookingId!, reason),
+    onMutate: () => onMutate({ status: 'REJECTED' }),
     onSuccess: (b) => onMutationSuccess(b, 'Booking request rejected.'),
     onError: onMutationError,
   });
 
   const cancelMutation = useMutation({
     mutationFn: (reason: string) => cancelBooking(bookingId!, reason),
+    onMutate: () => onMutate({ status: 'CANCELLED' }),
     onSuccess: (b) => onMutationSuccess(b, 'Booking cancelled.'),
     onError: onMutationError,
   });
 
   const noShowMutation = useMutation({
     mutationFn: (reason: string) => markNoShow(bookingId!, reason),
+    onMutate: () => onMutate({ status: 'NO_SHOW' }),
     onSuccess: (b) => onMutationSuccess(b, 'Marked as a no-show. New requests from this renter are blocked until cleared.'),
     onError: onMutationError,
   });

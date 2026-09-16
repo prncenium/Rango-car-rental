@@ -1,14 +1,29 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { BookingStatus } from '@rango/shared';
 import { BOOKING_STATUSES } from '@rango/shared';
 import { AdminShell } from '../../components/admin/AdminShell';
+import { ConfirmReasonModal } from '../../components/admin/ConfirmReasonModal';
 import { EmptyState } from '../../components/public/EmptyState';
-import { Select, Table, TableBody, TableCell, TableHead, TableHeaderCell, TableRow, Button } from '../../components/ui';
+import {
+  Select,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeaderCell,
+  TableRow,
+  Button,
+  Toast,
+  ToastViewport,
+} from '../../components/ui';
 import { Badge } from '../../components/ui/Badge';
-import { adminListBookings } from '../../api/admin';
+import { adminListBookings, confirmBooking, rejectBooking, type AdminBookingListItem } from '../../api/admin';
 import { bookingStatusMeta } from '../../lib/statusMeta';
+import { ApiError } from '../../lib/apiClient';
+import { useQueueKeyboardNav } from '../../lib/useQueueKeyboardNav';
+import { cn } from '../../components/ui/cn';
 
 const STATUS_LABELS: Record<BookingStatus, string> = {
   REQUESTED: 'Requested',
@@ -21,6 +36,23 @@ const STATUS_LABELS: Record<BookingStatus, string> = {
   CANCELLED: 'Cancelled',
   NO_SHOW: 'No-show',
 };
+
+interface ToastMessage {
+  id: number;
+  variant: 'success' | 'danger';
+  text: string;
+}
+
+function errorToastText(err: unknown): string {
+  if (err instanceof ApiError) {
+    if (err.code === 'GUARD_FAILED') return err.message || 'This action cannot be completed right now.';
+    if (err.code === 'CONFLICT') return 'This record has already changed. Refreshing.';
+    if (err.code === 'INVALID_TRANSITION') return 'This record has already changed. Refreshing.';
+    if (err.code === 'NOT_FOUND') return 'This booking is no longer available.';
+    return err.message || 'Something went wrong. Please try again.';
+  }
+  return 'Something went wrong. Please try again.';
+}
 
 export function AdminBookingQueuePage() {
   return (
@@ -40,9 +72,21 @@ function BookingQueue() {
   const [staleOnly, setStaleOnly] = useState(false);
   const [conflictedOnly, setConflictedOnly] = useState(false);
   const [page, setPage] = useState(1);
+  const [focusedIndex, setFocusedIndex] = useState(0);
+  const [rowAction, setRowAction] = useState<{ bookingId: string; kind: 'confirm' | 'reject' } | null>(null);
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  const queryClient = useQueryClient();
+  const queryKey = ['admin-bookings', status, unpaidOnly, overdueOnly, staleOnly, conflictedOnly, page] as const;
+
+  function pushToast(variant: ToastMessage['variant'], text: string) {
+    const id = Date.now() + Math.random();
+    setToasts((prev) => [...prev, { id, variant, text }]);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 6000);
+  }
 
   const query = useQuery({
-    queryKey: ['admin-bookings', status, unpaidOnly, overdueOnly, staleOnly, conflictedOnly, page],
+    queryKey,
     queryFn: () =>
       adminListBookings({
         status: status ? [status] : undefined,
@@ -68,7 +112,79 @@ function BookingQueue() {
     setStaleOnly(false);
     setConflictedOnly(false);
     setPage(1);
+    setFocusedIndex(0);
   }
+
+  type BookingsCache = { data: AdminBookingListItem[]; meta: NonNullable<typeof meta> } | undefined;
+
+  // RULE ADM-2 (spec 05.5 §0.5) — row leaves the queue optimistically before
+  // the response returns; rolled back to the pre-action snapshot on error.
+  function removeRowOptimistically(bookingId: string): BookingsCache {
+    const previous = queryClient.getQueryData<BookingsCache>(queryKey);
+    queryClient.setQueryData<BookingsCache>(queryKey, (current) => {
+      if (!current) return current;
+      return {
+        data: current.data.filter((b) => b._id !== bookingId),
+        meta: { ...current.meta, total: Math.max(0, current.meta.total - 1) },
+      };
+    });
+    return previous;
+  }
+
+  function rollback(previous: BookingsCache) {
+    queryClient.setQueryData<BookingsCache>(queryKey, previous);
+  }
+
+  function afterSuccess() {
+    queryClient.invalidateQueries({ queryKey: ['admin-bookings'] });
+    queryClient.invalidateQueries({ queryKey: ['admin-dashboard-counts'] });
+  }
+
+  const confirmMutation = useMutation({
+    mutationFn: (bookingId: string) => confirmBooking(bookingId),
+    onMutate: (bookingId: string) => ({ previous: removeRowOptimistically(bookingId) }),
+    onSuccess: () => {
+      afterSuccess();
+      pushToast('success', "Confirmed. Both parties can now see each other's phone number.");
+      setRowAction(null);
+    },
+    onError: (err, _bookingId, context) => {
+      rollback((context as { previous: BookingsCache }).previous);
+      pushToast('danger', errorToastText(err));
+    },
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: ({ bookingId, reason }: { bookingId: string; reason: string }) => rejectBooking(bookingId, reason),
+    onMutate: ({ bookingId }) => ({ previous: removeRowOptimistically(bookingId) }),
+    onSuccess: () => {
+      afterSuccess();
+      pushToast('success', 'Booking request rejected.');
+      setRowAction(null);
+    },
+    onError: (err, _vars, context) => {
+      rollback((context as { previous: BookingsCache }).previous);
+      pushToast('danger', errorToastText(err));
+    },
+  });
+
+  useQueueKeyboardNav({
+    rowCount: bookings.length,
+    focusedIndex,
+    setFocusedIndex,
+    onApprove: (index) => {
+      const b = bookings[index];
+      if (b && b.status === 'REQUESTED') setRowAction({ bookingId: b._id, kind: 'confirm' });
+    },
+    onReject: (index) => {
+      const b = bookings[index];
+      if (b && b.status === 'REQUESTED') setRowAction({ bookingId: b._id, kind: 'reject' });
+    },
+    onEscape: () => setRowAction(null),
+    enabled: !rowAction,
+  });
+
+  const rowActionBooking = rowAction ? bookings.find((b) => b._id === rowAction.bookingId) : undefined;
 
   return (
     <div>
@@ -83,6 +199,7 @@ function BookingQueue() {
           onChange={(e) => {
             setStatus(e.target.value as BookingStatus | '');
             setPage(1);
+            setFocusedIndex(0);
           }}
           className="w-56"
         >
@@ -143,10 +260,15 @@ function BookingQueue() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {bookings.map((booking) => {
+              {bookings.map((booking, index) => {
                 const meta = bookingStatusMeta(booking.status);
+                const requested = booking.status === 'REQUESTED';
                 return (
-                  <TableRow key={booking._id}>
+                  <TableRow
+                    key={booking._id}
+                    onClick={() => setFocusedIndex(index)}
+                    className={cn(index === focusedIndex && 'bg-surface-sunken ring-1 ring-inset ring-focus-ring')}
+                  >
                     <TableCell>
                       <Link
                         to={`/admin/bookings/${booking._id}`}
@@ -167,11 +289,31 @@ function BookingQueue() {
                       <Badge status={meta.badge}>{meta.label}</Badge>
                     </TableCell>
                     <TableCell>
-                      <Link to={`/admin/bookings/${booking._id}`}>
-                        <Button variant="secondary" size="sm">
-                          Review
-                        </Button>
-                      </Link>
+                      <div className="flex items-center gap-1.5">
+                        {requested && (
+                          <>
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              onClick={() => setRowAction({ bookingId: booking._id, kind: 'confirm' })}
+                            >
+                              Confirm
+                            </Button>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => setRowAction({ bookingId: booking._id, kind: 'reject' })}
+                            >
+                              Reject
+                            </Button>
+                          </>
+                        )}
+                        <Link to={`/admin/bookings/${booking._id}`}>
+                          <Button variant="secondary" size="sm">
+                            Review
+                          </Button>
+                        </Link>
+                      </div>
                     </TableCell>
                   </TableRow>
                 );
@@ -182,18 +324,64 @@ function BookingQueue() {
 
         {meta && meta.totalPages > 1 && (
           <div className="mt-6 flex items-center justify-center gap-3">
-            <Button variant="secondary" size="sm" disabled={meta.page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={meta.page <= 1}
+              onClick={() => {
+                setPage((p) => Math.max(1, p - 1));
+                setFocusedIndex(0);
+              }}
+            >
               Previous
             </Button>
             <span className="text-body-sm text-neutral-600">
               Page {meta.page} of {meta.totalPages}
             </span>
-            <Button variant="secondary" size="sm" disabled={!meta.hasNext} onClick={() => setPage((p) => p + 1)}>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={!meta.hasNext}
+              onClick={() => {
+                setPage((p) => p + 1);
+                setFocusedIndex(0);
+              }}
+            >
               Next
             </Button>
           </div>
         )}
       </div>
+
+      <ConfirmReasonModal
+        open={rowAction?.kind === 'confirm'}
+        onClose={() => setRowAction(null)}
+        onConfirm={() => rowAction && confirmMutation.mutate(rowAction.bookingId)}
+        title="Confirm this booking?"
+        description="Confirming will reveal both parties' phone numbers to each other. Make sure the owner has agreed the car is free and the renter has been reached before confirming."
+        reasonLabel="Note (not sent anywhere yet)"
+        confirmLabel="Confirm booking"
+        isSubmitting={confirmMutation.isPending}
+      />
+
+      <ConfirmReasonModal
+        open={rowAction?.kind === 'reject'}
+        onClose={() => setRowAction(null)}
+        onConfirm={(reason) => rowAction && rejectMutation.mutate({ bookingId: rowAction.bookingId, reason })}
+        title={rowActionBooking ? `Reject ${rowActionBooking.car.make} ${rowActionBooking.car.model}?` : 'Reject this booking request?'}
+        reasonLabel="Reason"
+        confirmLabel="Reject request"
+        confirmVariant="danger"
+        isSubmitting={rejectMutation.isPending}
+      />
+
+      <ToastViewport>
+        {toasts.map((t) => (
+          <Toast key={t.id} variant={t.variant} onDismiss={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))}>
+            {t.text}
+          </Toast>
+        ))}
+      </ToastViewport>
     </div>
   );
 }
