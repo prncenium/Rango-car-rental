@@ -4,10 +4,9 @@ import { apiFetch } from '../lib/apiClient';
 // UserSummary (drivingLicence.numberMasked), user.profile.routes.ts's
 // getProfile() returns the raw User document as-is — the full,
 // server-normalized (uppercased) licence number, since this is the user
-// reading their own record. There is no drivingLicenceNumber key in
-// updateProfileBody (server/src/routes/user.profile.routes.ts) — only
-// `name`/`phone` are writable here; the licence number has no edit path
-// yet despite spec 05 §3.8 sketching one, so it renders read-only below.
+// reading their own record. `drivingLicenceNumber` is writable via
+// updateProfileBody per spec 05 §3.8 — format-validated only (length +
+// character class), never a real-world check (spec 05 §7 rule 6).
 export interface ProfileUser {
   id: string;
   name: string;
@@ -28,6 +27,7 @@ export interface ProfileUser {
 export interface UpdateProfileInput {
   name?: string;
   phone?: string;
+  drivingLicenceNumber?: string;
 }
 
 export function getProfile(): Promise<ProfileUser> {

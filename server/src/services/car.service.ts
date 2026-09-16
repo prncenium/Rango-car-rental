@@ -253,13 +253,21 @@ export async function deleteListing(carId: string, actor: ActorContext): Promise
 
 // spec 02 E-15 — single-record read, owner-scoped. Ownership failures are
 // 404, not 403 (§3.4 rule 2), via the same loadOwnCarOrThrow every other
-// owner-scoped endpoint in this file uses.
-export async function getOwnListing(carId: string, actor: ActorContext): Promise<CarE> {
-  const car = await Car.findById(carId);
+// owner-scoped endpoint in this file uses. Response shape is spec 02 §7.2's
+// `OwnerCar & { bookings: BookingSummary[] }` — `bookings` carries no
+// counterparty (renter/owner are never populated here; §7.2 is explicit that
+// BookingSummary discloses contact only on the single-record booking read,
+// not embedded in a listing read either).
+export async function getOwnListing(carId: string, actor: ActorContext) {
+  const car = await Car.findById(carId).lean();
   if (!car || String(car.owner) !== String(actor.userId)) {
     throw new NotFoundError('Car not found.');
   }
-  return car;
+  const bookings = await Booking.find({ car: car._id })
+    .sort({ createdAt: -1 })
+    .select('startDate endDate days ratePerDaySnapshot totalAmount amountReceived status createdAt')
+    .lean();
+  return { ...car, bookings };
 }
 
 // spec 02 E-11 (exception E1) / CAR-08, CAR-09 — DRAFT|REJECTED ->

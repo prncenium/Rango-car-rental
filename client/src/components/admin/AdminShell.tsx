@@ -19,6 +19,7 @@ const NAV_ITEMS = [
   { to: '/admin/listings', label: 'Listings', countKey: 'listingsPending' as const },
   { to: '/admin/bookings', label: 'Bookings', countKey: 'bookingsRequested' as const },
   { to: '/admin/calendar', label: 'Calendar', countKey: null as null },
+  { to: '/admin/users', label: 'Users', countKey: null as null },
   { to: '/admin/audit', label: 'Audit Log', countKey: null as null },
 ] as const;
 

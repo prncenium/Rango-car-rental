@@ -6,6 +6,7 @@ import type {
   CarTransmission,
   PaymentMethod,
   PaymentPurpose,
+  Role,
 } from '@rango/shared';
 import { apiFetch, apiFetchWithMeta } from '../lib/apiClient';
 import type { ListMeta } from './bookings';
@@ -423,4 +424,58 @@ export function createAvailabilityBlock(
 // offers a delete control on a non-ADMIN_BLOCK range).
 export function deleteAvailabilityBlock(carId: string, blockId: string): Promise<void> {
   return apiFetch<void>(`/admin/listings/${carId}/availability-blocks/${blockId}`, { method: 'DELETE' });
+}
+
+// ---------------------------------------------------------------------------
+// User management (spec 05.5 §5; server/src/routes/admin.user.routes.ts,
+// server/src/services/user.service.ts). Straight `.lean()` reads with no
+// `_id`->`id` mapping layer, same shape convention as the booking types above.
+// ---------------------------------------------------------------------------
+
+export interface AdminUser {
+  _id: string;
+  name: string;
+  email: string;
+  phone: string;
+  role: Role;
+  isActive: boolean;
+  drivingLicence?: { number: string };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminListUsersQuery {
+  page?: number | undefined;
+  limit?: number | undefined;
+  sort?: 'createdAt:desc' | 'name:asc' | undefined;
+  role?: Role[] | undefined;
+  isActive?: boolean | undefined;
+  q?: string | undefined;
+}
+
+// GET /api/admin/users — E-57.
+export function adminListUsers(query: AdminListUsersQuery = {}): Promise<{ data: AdminUser[]; meta: ListMeta }> {
+  return apiFetchWithMeta<AdminUser[], ListMeta>(`/admin/users${buildQueryString(query as Record<string, unknown>)}`);
+}
+
+// GET /api/admin/users/:userId — E-58. Note: the server's adminGetUser does
+// not currently embed listings/bookingsAsRenter/bookingsAsOwner/auditTrail
+// the way spec 05.5 §5.2's wireframe shows (that enrichment is out of this
+// session's scope) — this page renders the account fields it actually gets
+// back and does not invent a booking-history section for data that isn't there.
+export function adminGetUser(userId: string): Promise<AdminUser> {
+  return apiFetch<AdminUser>(`/admin/users/${userId}`);
+}
+
+// POST /api/admin/users/:userId/deactivate — E-59. "Suspend"/"ban" are the
+// same edge (spec 05.5 §5.3) — reason is server-required.
+export function deactivateAdminUser(userId: string, reason: string): Promise<AdminUser> {
+  return apiFetch<AdminUser>(`/admin/users/${userId}/deactivate`, { method: 'POST', body: { reason } });
+}
+
+// POST /api/admin/users/:userId/reactivate — E-60. Server accepts no body
+// (reason is spec-optional there); RULE ADM-1 still requires non-empty text
+// in the UI, captured here and simply not sent since the route parses none.
+export function reactivateAdminUser(userId: string): Promise<AdminUser> {
+  return apiFetch<AdminUser>(`/admin/users/${userId}/reactivate`, { method: 'POST', body: {} });
 }

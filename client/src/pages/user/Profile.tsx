@@ -20,7 +20,12 @@ function Profile() {
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
-  const [fieldErrors, setFieldErrors] = useState<{ name?: string | undefined; phone?: string | undefined }>({});
+  const [licenceNumber, setLicenceNumber] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<{
+    name?: string | undefined;
+    phone?: string | undefined;
+    drivingLicenceNumber?: string | undefined;
+  }>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
@@ -28,11 +33,22 @@ function Profile() {
     if (query.data) {
       setName(query.data.name);
       setPhone(query.data.phone);
+      setLicenceNumber(query.data.drivingLicence.number);
     }
   }, [query.data]);
 
+  // spec 05 §3.8 — 8-20 chars, [A-Z0-9- ], uppercased on blur to match server
+  // normalization (spec 03 §5.4). Client-side pre-check only; the server is
+  // authoritative.
+  const LICENCE_PATTERN = /^[A-Z0-9- ]{8,20}$/;
+
   const mutation = useMutation({
-    mutationFn: () => updateProfile({ name, phone }),
+    mutationFn: () =>
+      updateProfile({
+        name,
+        phone,
+        drivingLicenceNumber: licenceNumber.trim().toUpperCase(),
+      }),
     onSuccess: (updated) => {
       queryClient.setQueryData(['own-profile'], updated);
       setFieldErrors({});
@@ -46,6 +62,7 @@ function Profile() {
         setFieldErrors({
           name: details?.fieldErrors?.name?.[0],
           phone: details?.fieldErrors?.phone?.[0],
+          drivingLicenceNumber: details?.fieldErrors?.drivingLicenceNumber?.[0],
         });
         setFormError('Please fix the highlighted fields.');
         return;
@@ -64,6 +81,11 @@ function Profile() {
     setSaved(false);
     setFormError(null);
     setFieldErrors({});
+    if (!LICENCE_PATTERN.test(licenceNumber.trim().toUpperCase())) {
+      setFieldErrors({ drivingLicenceNumber: 'Must be 8-20 characters: letters, digits, hyphens, and spaces only.' });
+      setFormError('Please fix the highlighted fields.');
+      return;
+    }
     mutation.mutate();
   }
 
@@ -88,7 +110,10 @@ function Profile() {
   }
 
   const profile = query.data;
-  const dirty = name !== profile.name || phone !== profile.phone;
+  const dirty =
+    name !== profile.name ||
+    phone !== profile.phone ||
+    licenceNumber.trim().toUpperCase() !== profile.drivingLicence.number;
 
   return (
     <div className="mx-auto max-w-xl">
@@ -133,9 +158,12 @@ function Profile() {
 
             <Input
               label="Driving licence number"
-              value={profile.drivingLicence.number}
-              disabled
-              helperText="We don't verify this — an admin may check it against your physical licence when you pick up a car. It isn't editable here yet."
+              required
+              value={licenceNumber}
+              onChange={(e) => setLicenceNumber(e.target.value)}
+              onBlur={(e) => setLicenceNumber(e.target.value.trim().toUpperCase())}
+              errorText={fieldErrors.drivingLicenceNumber}
+              helperText="We don't verify this — an admin may check it against your physical licence when you pick up a car."
             />
 
             <div className="flex justify-end">

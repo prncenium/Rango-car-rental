@@ -2,18 +2,13 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { listPublicCars } from '../../api/cars';
 import { PublicLayout } from './PublicLayout';
+import { VideoHero } from '../../components/public/VideoHero';
 import { CarCard } from '../../components/public/CarCard';
 import { CarCardSkeleton } from '../../components/public/CarCardSkeleton';
 import { EmptyState } from '../../components/public/EmptyState';
 import { Button } from '../../components/ui/Button';
 import { useAuthStore } from '../../store/auth.store';
-import {
-  BadgePercentIcon,
-  CarSilhouetteIcon,
-  HandshakeIcon,
-  SearchIcon,
-  ShieldCheckIcon,
-} from '../../components/ui/icons';
+import { BadgePercentIcon, HandshakeIcon, SearchIcon, ShieldCheckIcon } from '../../components/ui/icons';
 
 const VALUE_PROPS = [
   {
@@ -51,39 +46,36 @@ export function HomePage() {
 
   return (
     <PublicLayout>
-      {/* Hero */}
-      <section className="relative overflow-hidden bg-brand-primary text-neutral-0">
-        <CarSilhouetteIcon className="pointer-events-none absolute -bottom-10 -right-10 h-72 w-72 text-neutral-0/5" />
-        <div className="relative mx-auto max-w-7xl px-4 py-20 sm:px-6 sm:py-28 lg:px-8">
-          <p className="text-caption font-medium uppercase tracking-wide text-brand-accent">
-            Rental, run properly
-          </p>
-          <h1 className="mt-3 max-w-2xl font-display text-display-lg text-neutral-0 sm:text-display-xl">
-            Rent a real car, every listing reviewed by a real admin.
-          </h1>
-          <p className="mt-5 max-w-xl text-body-lg text-neutral-200">
-            Every listing on Rango is approved before it's public and every rental is handed over
-            in person — no online payment, no unvetted cars, no guesswork.
-          </p>
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            <Button
-              variant="primary"
-              size="lg"
-              className="w-full sm:w-auto"
-              onClick={() => navigate('/cars')}
-            >
-              <SearchIcon className="h-4 w-4" />
-              Browse available cars
-            </Button>
-            <Link
-              to={isAuthenticated ? '/account/listings/new' : '/register'}
-              className="inline-flex h-12 w-full items-center justify-center rounded-sm border border-neutral-0/30 px-6 text-body-md text-neutral-0 transition-colors hover:bg-neutral-0/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus-ring focus-visible:outline-offset-2 sm:w-auto"
-            >
-              List your car
-            </Link>
-          </div>
+      {/* Hero — spec 05 §3.1 amendment: scroll-linked shrinking video hero */}
+      <VideoHero>
+        <p className="text-caption font-medium uppercase tracking-wide text-brand-accent">
+          Rental, run properly
+        </p>
+        <h1 className="mt-3 max-w-2xl font-display text-display-lg text-neutral-0 sm:text-display-xl">
+          Rent a real car, every listing reviewed by a real admin.
+        </h1>
+        <p className="mt-5 max-w-xl text-body-lg text-neutral-200">
+          Every listing on Rango is approved before it's public and every rental is handed over
+          in person — no online payment, no unvetted cars, no guesswork.
+        </p>
+        <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+          <Button
+            variant="primary"
+            size="lg"
+            className="w-full sm:w-auto"
+            onClick={() => navigate('/cars')}
+          >
+            <SearchIcon className="h-4 w-4" />
+            Browse available cars
+          </Button>
+          <Link
+            to={isAuthenticated ? '/account/listings/new' : '/register'}
+            className="inline-flex h-12 w-full items-center justify-center rounded-sm border border-neutral-0/30 px-6 text-body-md text-neutral-0 transition-colors hover:bg-neutral-0/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus-ring focus-visible:outline-offset-2 sm:w-auto"
+          >
+            List your car
+          </Link>
         </div>
-      </section>
+      </VideoHero>
 
       {/* Featured / recent listings */}
       <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">

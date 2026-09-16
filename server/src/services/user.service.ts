@@ -149,13 +149,17 @@ export async function getProfile(actor: ActorContext): Promise<UserE> {
 export interface UpdateProfileInput {
   name?: string | undefined;
   phone?: string | undefined;
+  drivingLicenceNumber?: string | undefined;
 }
 
 // spec 02 E-26 — NONE of this touches a status field. Email, role, kycStatus,
 // and isActive are absent from the DTO at the route layer (D10) and are never
 // even parameters here. Phone is the only uniqueness-guarded field.
+// `drivingLicenceNumber` is data, not a check (spec 05 §3.8, §7 rule 6) — it
+// gates nothing and is never re-verified against anything; the platform has
+// no registry to check it against.
 export async function updateProfile(actor: ActorContext, input: UpdateProfileInput): Promise<UserE> {
-  if (input.name === undefined && input.phone === undefined) {
+  if (input.name === undefined && input.phone === undefined && input.drivingLicenceNumber === undefined) {
     throw new ValidationError('At least one field is required.', { source: 'body', fieldErrors: {} });
   }
   const session = await mongoose.startSession();
@@ -173,6 +177,10 @@ export async function updateProfile(actor: ActorContext, input: UpdateProfileInp
       }
       if (input.name !== undefined) {
         user.name = input.name;
+      }
+      if (input.drivingLicenceNumber !== undefined) {
+        user.drivingLicence.number = input.drivingLicenceNumber;
+        user.drivingLicence.updatedAt = new Date();
       }
       await user.save({ session });
 

@@ -34,17 +34,28 @@ export function requestBooking(input: RequestBookingInput): Promise<RequestedBoo
 }
 
 // GET /api/user/bookings (E-20). listOwnBookings() in
-// server/src/services/booking.service.ts returns raw, unpopulated `.lean()`
-// Booking documents — `car`/`renter`/`owner` are plain id strings, not the
-// PublicCarSummary/PartyContact shapes spec 02 §7.2 describes for
-// BookingSummary/BookingDetail. There is no name, phone, or make/model on
-// this response at all yet (populate() is not called), so this dashboard
-// cannot show "revealed contact info" or a car title from this endpoint as
-// specced — that needs a server-side change, not resolved here per
-// CLAUDE.md's "never modify specs while implementing."
+// server/src/services/booking.service.ts now populates `car` (make/model/
+// year/etc.), matching spec 02 §7.2's `BookingSummary.car: PublicCarSummary`.
+// `renter`/`owner` stay as raw id strings deliberately — §7.2 is explicit
+// that "BookingSummary carries no counterparty at all, in any state" (so a
+// list endpoint can't be used to harvest contacts in bulk); PartyContact only
+// ever appears on the single-record BookingDetail read (E-21).
+// Straight off `.populate('car', '...').lean()` with no `_id`->`id` mapping
+// layer — same "carries Mongo's `_id` verbatim" shape convention as
+// AdminBookingCarSummary in api/admin.ts.
+export interface OwnBookingCar {
+  _id: string;
+  make: string;
+  model: string;
+  year: number;
+  color?: string;
+  images: string[];
+  location: { city: string; state: string };
+}
+
 export interface OwnBooking {
   id: string;
-  car: string;
+  car: OwnBookingCar;
   renter: string;
   owner: string;
   startDate: string;

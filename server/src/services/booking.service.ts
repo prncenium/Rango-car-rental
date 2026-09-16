@@ -743,11 +743,17 @@ export async function listOwnBookings(actor: ActorContext, query: ListOwnBooking
     if (query.startDateTo) filter.startDate.$lt = new Date(query.startDateTo);
   }
 
+  // spec 02 §7.2 — BookingSummary carries `car: PublicCarSummary` but
+  // deliberately "no counterparty at all, in any state" (renter/owner are
+  // never populated here, on purpose — that's what keeps a list endpoint
+  // from being usable to harvest contacts in bulk; PartyContact only ever
+  // appears on the single-record BookingDetail read, E-21).
   const [data, total] = await Promise.all([
     Booking.find(filter)
       .sort({ ...BOOKINGS_SORT_WHITELIST[sortKey], _id: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
+      .populate('car', 'make model year color transmission fuelType seats mileageKm images location rentalPricePerDay')
       .lean(),
     Booking.countDocuments(filter),
   ]);

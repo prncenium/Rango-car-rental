@@ -84,6 +84,15 @@ export function carListingMeta(state: CarListingState): StatusMeta {
   }
 }
 
+// User.isActive is a boolean, not an enum, but the same "icon + text, never
+// color alone" rule (§2.3) still applies to it wherever it's rendered as a
+// badge (spec 05.5 §5.1's user list, §5.2's detail header).
+export function userActiveMeta(isActive: boolean): StatusMeta {
+  return isActive
+    ? { badge: 'success', label: 'Active', explain: 'Can sign in and use the platform.' }
+    : { badge: 'inactive', label: 'Suspended', explain: 'Signed out everywhere; cannot sign back in until reactivated.' };
+}
+
 // spec 04 §1.4's "stale" flag is derivable client-side from data the renter
 // already has (startDate vs. today) — unlike dateConflict/competingRequestCount,
 // which need visibility into other renters' bookings and are not returned by

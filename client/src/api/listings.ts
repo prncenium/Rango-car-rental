@@ -1,15 +1,20 @@
-import type { CarFuelType, CarListingState, CarModerationStatus, CarTransmission, CreateCarDto, UpdateCarDto } from '@rango/shared';
+import type {
+  BookingStatus,
+  CarFuelType,
+  CarListingState,
+  CarModerationStatus,
+  CarTransmission,
+  CreateCarDto,
+  UpdateCarDto,
+} from '@rango/shared';
 import { apiFetch, apiFetchWithMeta, ApiError } from '../lib/apiClient';
 import { getCsrfToken } from '../lib/csrf';
 import type { ListMeta } from './bookings';
 
 // GET /api/user/listings (E-14) — server/src/services/car.service.ts's
-// listOwnListings() returns raw, owner-scoped `.lean()` Car documents. There
-// is no embedded `bookings: BookingSummary[]` (spec 02 §7.2's OwnerCar shape)
-// on this response — that only exists on the single-record GET
-// /api/user/listings/:carId (E-15), which is not wired in this pass — so the
-// Owner Dashboard here shows listing/moderation status only, no per-car
-// booking section.
+// listOwnListings() returns raw, owner-scoped `.lean()` Car documents (no
+// embedded bookings — spec 02 §7.2's `OwnerCar & { bookings }` shape is only
+// on the single-record GET /api/user/listings/:carId, E-15, below).
 export interface OwnCar {
   id: string;
   make: string;
@@ -65,11 +70,23 @@ export function listOwnListings(
 }
 
 // GET /api/user/listings/:carId (E-15) — single-record read, owner-scoped.
-// Server returns the raw Car document (not yet the full OwnerCar shape with
-// bookings[]/availableActions[] — those aren't wired server-side in this
-// pass), which is exactly what ListingForm needs to prefill an edit.
-export function getOwnListing(carId: string): Promise<OwnCar> {
-  return apiFetch<OwnCar>(`/user/listings/${carId}`);
+// Server embeds `bookings: BookingSummary[]` per spec 02 §7.2's OwnerCar
+// shape (no counterparty on these rows — see the service's own comment).
+// `availableActions[]` still isn't wired server-side in this pass.
+export interface OwnListingBooking {
+  _id: string;
+  startDate: string;
+  endDate: string;
+  days: number;
+  ratePerDaySnapshot: number;
+  totalAmount: number;
+  amountReceived: number;
+  status: BookingStatus;
+  createdAt: string;
+}
+
+export function getOwnListing(carId: string): Promise<OwnCar & { bookings: OwnListingBooking[] }> {
+  return apiFetch<OwnCar & { bookings: OwnListingBooking[] }>(`/user/listings/${carId}`);
 }
 
 // POST /api/user/listings (E-09). The form never collects `images` — per

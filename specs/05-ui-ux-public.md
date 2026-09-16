@@ -85,7 +85,20 @@ Convention: **Auth** column is what the *route* requires client-side (server-sid
 
 Layout regions use a shared shell: `PublicHeader`/`PublicFooter` (already built) for `/`, `/cars`, `/cars/:carId`; an authenticated **account shell** (header + left nav, collapsing to a top tab bar below `md` per `docs/design/03-design-system.md` §7) for every `/account/*` route and `/cars/:carId/request`.
 
-### 3.1 Home (existing — see §0 for the one copy note)
+### 3.1 Home (existing — see §0 for the one copy note; amended below for the video hero)
+
+**Amendment (this session) — video hero with scroll-linked shrink.** The hero background is a looping, muted, autoplaying video (no audio controls — this is a background element, not a media player) instead of a flat `brand-primary` fill. Behavior:
+
+- **At the top of the page** (`scrollY = 0`), the video fills the hero section edge-to-edge, same footprint as the existing flat-color hero (full-bleed width, the same vertical padding band as today).
+- **As the visitor scrolls down through roughly the first viewport height**, the hero's height/inset shrinks continuously and proportionally to scroll position (not a single breakpoint jump) — converging on a shorter, inset "band" (rounded corners, margin on all sides) once the visitor has scrolled past that first viewport. This mirrors the reference behavior the user supplied (a competitor site's hero-shrink-on-scroll pattern) but uses Rango's own token set (`radius-lg`, `space-*`, `shadow-md` once inset) rather than copying that site's literal styling.
+- **Below that scroll threshold**, the shrunk hero stays pinned at its minimum size (it does not keep shrinking or disappear) — the video keeps looping behind it at the smaller footprint.
+- **Headline/CTA overlay** (the existing eyebrow/H1/subcopy/buttons) fades/shrinks in step with the video, staying legible at both the full and shrunk sizes; it does not scroll away independently of the video block.
+- **Reduced motion**: `prefers-reduced-motion: reduce` disables the scroll-linked shrink animation (the hero renders at its shrunk resting size immediately, no scroll-driven interpolation) and the video does not autoplay — a static poster frame (the video's first frame) is shown instead, consistent with never forcing motion on a visitor who has asked not to receive it.
+- **Fallback**: if the video fails to load (network error, unsupported format), the hero falls back to the previous flat `brand-primary` background — the copy/CTAs are never dependent on the video loading successfully.
+- **Video asset**: sourced from a Cloudinary-hosted URL the operator supplies (not derived from any spec-defined upload flow — this is a one-off marketing asset, not `Car.images`, and is not subject to `docs/design/02-image-storage.md`'s owner-upload transport). Muted, looped, `playsInline` (no fullscreen takeover on mobile Safari), no native video controls.
+- **This does not change the copy rule from §0/§7 rule 7** — "admin-approved" language stays scoped to the car, never the person, regardless of what plays behind it.
+
+### 3.1.1 Original hero wireframe (still applies to layout/copy; video replaces the flat background fill)
 
 ```
 ┌─────────────────────────────────────────────────────────┐

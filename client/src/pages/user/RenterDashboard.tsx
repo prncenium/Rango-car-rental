@@ -122,10 +122,10 @@ function RenterDashboard() {
               <li key={booking.id} className="rounded-lg border border-border bg-surface-card p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <p className="font-mono text-mono-sm text-neutral-500">
-                      Car #{booking.car.slice(-6).toUpperCase()}
+                    <p className="text-body-md font-medium text-neutral-900">
+                      {booking.car.make} {booking.car.model} {booking.car.year}
                     </p>
-                    <p className="mt-1 text-body-md text-neutral-900">
+                    <p className="mt-1 text-body-sm text-neutral-600">
                       {booking.startDate} → {booking.endDate} · {booking.days} day{booking.days === 1 ? '' : 's'}
                     </p>
                     <p className="mt-1 text-body-sm text-neutral-600">
@@ -153,10 +153,12 @@ function RenterDashboard() {
                   </p>
                 ) : null}
 
-                {/* Owner contact — not renderable yet: GET /api/user/bookings returns raw
-                    ids only (no PartyContact), see client/src/api/bookings.ts's comment. */}
+                {/* Owner contact is deliberately absent from this list view — spec 02
+                    §7.2: BookingSummary carries no counterparty at all, in any state,
+                    so a list endpoint can't be used to harvest contacts in bulk.
+                    PartyContact only appears on the single-record booking detail. */}
                 <p className="mt-2 text-caption text-neutral-400">
-                  Contact details aren't shown in this list yet — they appear once your request is confirmed.
+                  Contact details appear once your request is confirmed.
                 </p>
 
                 {booking.status === 'REQUESTED' && (

@@ -563,16 +563,21 @@ function ActivateBookingModal({
   amountReceived: number;
 }) {
   const [odometerOut, setOdometerOut] = useState('');
-  const [overrideReason, setOverrideReason] = useState('');
+  const [note, setNote] = useState('');
 
   function handleClose() {
     setOdometerOut('');
-    setOverrideReason('');
+    setNote('');
     onClose();
   }
 
   const needsOverride = shortfall > 0;
-  const canSubmit = (!needsOverride || overrideReason.trim().length > 0) && !isSubmitting;
+  // spec 05.5 §0.4 RULE ADM-1 — every state-changing admin action requires
+  // non-empty free text before the confirm button enables, regardless of
+  // whether the underlying DTO field is server-required. The only text field
+  // this endpoint accepts is `overrideReason`, so it doubles as the mandatory
+  // handover note when there's no payment shortfall to override.
+  const canSubmit = note.trim().length > 0 && !isSubmitting;
 
   return (
     <Modal open={open} onClose={handleClose} title="Handover — mark active">
@@ -602,16 +607,14 @@ function ActivateBookingModal({
             value={odometerOut}
             onChange={(e) => setOdometerOut(e.target.value)}
           />
-          {needsOverride && (
-            <Textarea
-              label="Override reason (required — payment shortfall)"
-              required
-              value={overrideReason}
-              onChange={(e) => setOverrideReason(e.target.value)}
-              helperText={`Shortfall: ₹${shortfall.toLocaleString('en-IN')}`}
-              rows={3}
-            />
-          )}
+          <Textarea
+            label={needsOverride ? 'Override reason (required — payment shortfall)' : 'Handover note (required)'}
+            required
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            helperText={needsOverride ? `Shortfall: ₹${shortfall.toLocaleString('en-IN')}` : undefined}
+            rows={3}
+          />
         </div>
       </ModalBody>
       <ModalFooter>
@@ -625,7 +628,7 @@ function ActivateBookingModal({
           onClick={() =>
             onSubmit({
               ...(odometerOut.trim() ? { odometerOut: Number(odometerOut) } : {}),
-              ...(needsOverride ? { overrideReason: overrideReason.trim() } : {}),
+              overrideReason: note.trim(),
             })
           }
         >
@@ -661,7 +664,9 @@ function CompleteBookingModal({
   const odometerInNumber = odometerIn.trim() ? Number(odometerIn) : undefined;
   const odometerInvalid =
     odometerInNumber !== undefined && odometerOut !== undefined && odometerInNumber < odometerOut;
-  const canSubmit = !odometerInvalid && !isSubmitting;
+  // spec 05.5 §0.4 RULE ADM-1 — non-empty free text required before confirm
+  // enables, even though `conditionNote` is server-optional.
+  const canSubmit = !odometerInvalid && conditionNote.trim().length > 0 && !isSubmitting;
 
   return (
     <Modal open={open} onClose={handleClose} title="Complete rental — mark returned">
@@ -677,7 +682,8 @@ function CompleteBookingModal({
             helperText={odometerOut !== undefined ? `Out was ${odometerOut} km` : undefined}
           />
           <Textarea
-            label="Condition notes (optional)"
+            label="Condition notes (required)"
+            required
             value={conditionNote}
             onChange={(e) => setConditionNote(e.target.value)}
             rows={3}
@@ -695,7 +701,7 @@ function CompleteBookingModal({
           onClick={() =>
             onSubmit({
               ...(odometerInNumber !== undefined ? { odometerIn: odometerInNumber } : {}),
-              ...(conditionNote.trim() ? { conditionNote: conditionNote.trim() } : {}),
+              conditionNote: conditionNote.trim(),
             })
           }
         >
