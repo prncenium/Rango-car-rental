@@ -2,24 +2,14 @@ import { Routes, Route } from 'react-router-dom';
 import { LoginPage } from './pages/auth/Login';
 import { RegisterPage } from './pages/auth/Register';
 import { ResetPasswordPage } from './pages/auth/ResetPassword';
-
-function Home() {
-  return (
-    <main className="flex min-h-screen items-center justify-center bg-surface-page">
-      <div className="text-center">
-        <h1 className="font-display text-display-md text-brand-primary">Rango Car Rental</h1>
-        <p className="mt-2 text-body-md text-neutral-600">
-          Client scaffold ready — routes, components, and screens land in later tasks.
-        </p>
-      </div>
-    </main>
-  );
-}
+import { HomePage } from './pages/public/Home';
+import { SearchPage } from './pages/public/Search';
 
 export function App() {
   return (
     <Routes>
-      <Route path="/" element={<Home />} />
+      <Route path="/" element={<HomePage />} />
+      <Route path="/cars" element={<SearchPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />

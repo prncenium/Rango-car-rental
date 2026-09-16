@@ -65,3 +65,35 @@ export async function apiFetch<T>(path: string, options: ApiRequestOptions = {})
   }
   return json.data;
 }
+
+// Same envelope as apiFetch, but keeps `meta` — needed by every paginated
+// list endpoint (spec 02 §4.1's `{ data, meta }` shape), which apiFetch's
+// data-only return discards.
+export async function apiFetchWithMeta<T, M>(
+  path: string,
+  options: ApiRequestOptions = {},
+): Promise<{ data: T; meta: M }> {
+  const method = options.method ?? 'GET';
+  const headers: Record<string, string> = {};
+  if (options.body !== undefined) {
+    headers['Content-Type'] = 'application/json';
+  }
+  if (MUTATING_METHODS.has(method)) {
+    const csrfToken = getCsrfToken();
+    if (csrfToken) {
+      headers['X-CSRF-Token'] = csrfToken;
+    }
+  }
+
+  const init: RequestInit = { method, headers, credentials: 'include' };
+  if (options.body !== undefined) {
+    init.body = JSON.stringify(options.body);
+  }
+  const response = await fetch(`/api${path}`, init);
+
+  const json = (await response.json()) as { data: T; meta: M } | { error: ApiErrorBody };
+  if ('error' in json) {
+    throw new ApiError(response.status, json.error);
+  }
+  return json;
+}
