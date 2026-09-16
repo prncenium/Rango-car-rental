@@ -7,7 +7,7 @@ import { Car } from '../models/Car.model.js';
 import { Payment } from '../models/Payment.model.js';
 import { BookingDayLock } from '../models/BookingDayLock.model.js';
 import { AuditLog } from '../models/AuditLog.model.js';
-import { insertBookingLocks, releaseBookingLocks } from '../lib/dayLocks.js';
+import { insertBookingLocks, releaseBookingLocks, releaseBookingLocksFrom } from '../lib/dayLocks.js';
 import { toUtcMidnight } from '../lib/dayLocks.js';
 import { getBookingConfig } from '../lib/systemConfig.js';
 import { transition, transitionWithEdge } from '../transitions/transition.js';
@@ -221,6 +221,112 @@ export async function markNoShow(bookingId: string, reason: string | undefined, 
         reason,
       });
       await releaseBookingLocks(session, booking._id);
+    });
+    return result;
+  } finally {
+    await session.endSession();
+  }
+}
+
+// D4 — admin ends a live rental early. `effectiveFrom` defaults to today
+// (UTC midnight) and is bounded to [startDate, today] by
+// guardEffectiveFromValid; a range ending at endDate would strand every
+// overdue booking (today >= endDate is exactly the overdue case). Only the
+// days from effectiveFrom forward are released — days already consumed stay
+// locked/historical (spec 04 §1.3, §3.3).
+export async function terminateBooking(
+  bookingId: string,
+  actor: ActorContext,
+  params: { reason: string; effectiveFrom?: string | undefined },
+): Promise<BookingE> {
+  requireReason(params.reason, 'terminate a rental early');
+  const session = await mongoose.startSession();
+  try {
+    let result!: BookingE;
+    await session.withTransaction(async () => {
+      const booking = await loadBookingOrThrow(bookingId, session);
+      const effectiveFrom = params.effectiveFrom ? toUtcMidnight(new Date(params.effectiveFrom)) : toUtcMidnight(new Date());
+      if (Number.isNaN(effectiveFrom.getTime())) {
+        throw new ValidationError('effectiveFrom must be a valid YYYY-MM-DD date.', {
+          source: 'body',
+          fieldErrors: { effectiveFrom: ['invalid date'] },
+        });
+      }
+
+      booking.terminationReason = params.reason;
+      // guardEffectiveFromValid reads this off $locals — a transient,
+      // never-persisted per-document bag Mongoose provides for exactly this
+      // (passing extra context to a guard without inventing a schema field
+      // or a body-supplied status/date the actor could otherwise smuggle in).
+      booking.$locals.effectiveFrom = effectiveFrom;
+
+      result = await transition({
+        registry: bookingRegistry,
+        entityType: 'BOOKING',
+        field: 'status',
+        entity: booking,
+        to: 'TERMINATED',
+        actor,
+        session,
+        reason: params.reason,
+        metadata: { effectiveFrom: effectiveFrom.toISOString().slice(0, 10) },
+      });
+      await releaseBookingLocksFrom(session, booking._id, effectiveFrom);
+    });
+    return result;
+  } finally {
+    await session.endSession();
+  }
+}
+
+// BOOK-12 — lifts a no-show flag. This does NOT change Booking.status: the
+// gap is that noShowCleared (set false by markNoShow) had no transition that
+// ever set it true, making a single admin's no-show call a permanent,
+// unappealable ban (spec 04 D4). Not a status transition, so it does not go
+// through transition() — same pattern as confirmOfflinePayment's direct
+// write + explicit AuditLog row for a non-status admin action.
+export async function clearNoShow(bookingId: string, reason: string, actor: ActorContext): Promise<BookingE> {
+  requireReason(reason, 'clear a no-show');
+  const session = await mongoose.startSession();
+  try {
+    let result!: BookingE;
+    await session.withTransaction(async () => {
+      const booking = await loadBookingOrThrow(bookingId, session);
+      if (booking.noShowCleared) {
+        throw new ValidationError('This no-show has already been cleared.', {
+          source: 'body',
+          fieldErrors: { bookingId: ['no-show already cleared'] },
+        });
+      }
+      if (!booking.noShowAt) {
+        throw new ValidationError('This booking has no no-show to clear.', {
+          source: 'body',
+          fieldErrors: { bookingId: ['booking was never marked no-show'] },
+        });
+      }
+
+      booking.noShowCleared = true;
+      booking.noShowClearedBy = actor.userId;
+      booking.noShowClearedAt = new Date();
+      booking.noShowClearedReason = reason;
+      await booking.save({ session });
+
+      await AuditLog.create(
+        [
+          {
+            actor: actor.userId,
+            actorRole: actor.role,
+            action: 'BOOKING_NO_SHOW_CLEARED',
+            entityType: 'BOOKING',
+            entityId: booking._id,
+            reason,
+            ipAddress: actor.ip,
+          },
+        ],
+        { session },
+      );
+
+      result = booking;
     });
     return result;
   } finally {

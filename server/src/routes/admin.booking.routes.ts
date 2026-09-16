@@ -6,10 +6,12 @@ import {
   adminGetBookingDetail,
   adminListBookings,
   cancelBooking,
+  clearNoShow,
   completeBooking,
   confirmBooking,
   markNoShow,
   rejectBooking,
+  terminateBooking,
 } from '../services/booking.service.js';
 import { confirmOfflinePayment } from '../services/payment.service.js';
 
@@ -152,6 +154,36 @@ router.post('/:bookingId/no-show', async (req, res, next) => {
     const { bookingId } = bookingIdParams.parse(req.params);
     const { reason } = noShowBody.parse(req.body);
     const booking = await markNoShow(bookingId, reason, req.actor!);
+    res.status(200).json({ data: booking });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// BOOK-11 — admin ends a live rental early. effectiveFrom is optional
+// (defaults to today) and bounded server-side to [startDate, today].
+const terminateBody = z.strictObject({
+  reason: z.string().min(1).max(500),
+  effectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+});
+
+router.post('/:bookingId/terminate', async (req, res, next) => {
+  try {
+    const { bookingId } = bookingIdParams.parse(req.params);
+    const body = terminateBody.parse(req.body);
+    const booking = await terminateBooking(bookingId, req.actor!, body);
+    res.status(200).json({ data: booking });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// BOOK-12 — lifts a no-show flag without touching Booking.status.
+router.post('/:bookingId/clear-no-show', async (req, res, next) => {
+  try {
+    const { bookingId } = bookingIdParams.parse(req.params);
+    const { reason } = reasonBody.parse(req.body);
+    const booking = await clearNoShow(bookingId, reason, req.actor!);
     res.status(200).json({ data: booking });
   } catch (err) {
     next(err);

@@ -45,3 +45,29 @@ export const guardStartDatePassed: Guard<BookingE> = {
     return { ok: true };
   },
 };
+
+// D4 — terminate's effectiveFrom is admin-chosen but bounded to
+// [startDate, today]. The range [startDate, endDate) (the original design
+// draft's range) strands every overdue booking permanently ACTIVE, since
+// today >= endDate is precisely the overdue case. `entity.overrideReason` is
+// reused here purely as a transient carrier for effectiveFrom, set by the
+// service before calling transition() — never persisted under that name for
+// this edge (see booking.service.ts terminateBooking()).
+export const guardEffectiveFromValid: Guard<BookingE> = {
+  name: 'guardEffectiveFromValid',
+  check: (entity) => {
+    const effectiveFrom = (entity as unknown as { $locals?: { effectiveFrom?: Date } }).$locals?.effectiveFrom;
+    if (!effectiveFrom) {
+      return { ok: false, details: { reason: 'effectiveFrom missing' } };
+    }
+    const today = toUtcMidnight(new Date());
+    const start = toUtcMidnight(entity.startDate);
+    if (effectiveFrom.getTime() < start.getTime() || effectiveFrom.getTime() > today.getTime()) {
+      return {
+        ok: false,
+        details: { effectiveFrom: effectiveFrom.toISOString().slice(0, 10), allowedFrom: entity.startDate, allowedTo: today },
+      };
+    }
+    return { ok: true };
+  },
+};

@@ -77,3 +77,17 @@ export async function insertBookingLocks(
 export async function releaseBookingLocks(session: ClientSession, bookingId: Types.ObjectId): Promise<void> {
   await BookingDayLock.deleteMany({ booking: bookingId }).session(session);
 }
+
+// D4/spec 04 §3.3 — an early termination frees only the days from
+// `effectiveFrom` forward; days already consumed stay locked/historical. Only
+// BOOKING/BUFFER rows belonging to this booking are touched.
+export async function releaseBookingLocksFrom(
+  session: ClientSession,
+  bookingId: Types.ObjectId,
+  effectiveFrom: Date,
+): Promise<void> {
+  await BookingDayLock.deleteMany({
+    booking: bookingId,
+    day: { $gte: toUtcMidnight(effectiveFrom) },
+  }).session(session);
+}

@@ -2,7 +2,12 @@ import type { HydratedDocument } from 'mongoose';
 import type { CarDoc } from '../models/Car.model.js';
 import type { BookingDoc } from '../models/Booking.model.js';
 import { guardCarApproved, guardNoActiveDayLocks } from './guards/car.guards.js';
-import { guardDatesNotPast, guardPaymentCovered, guardStartDatePassed } from './guards/booking.guards.js';
+import {
+  guardDatesNotPast,
+  guardEffectiveFromValid,
+  guardPaymentCovered,
+  guardStartDatePassed,
+} from './guards/booking.guards.js';
 import type { TransitionEdge, TransitionRegistry } from './transition.js';
 import { registryKey } from './transition.js';
 
@@ -134,6 +139,18 @@ bookingRegistry.set(registryKey('BOOKING', 'status'), [
     guards: [],
     auditAction: 'BOOKING_COMPLETED',
     sideEffects: () => ({ returnedAt: new Date() }),
+  },
+  {
+    // D4 — admin ends a live rental early. reason is required (enforced in
+    // booking.service.ts, same pattern as reject/cancel); effectiveFrom is
+    // bounded to [startDate, today] by guardEffectiveFromValid and drives
+    // which day-locks the caller releases after this transition commits.
+    from: 'ACTIVE',
+    to: 'TERMINATED',
+    actorClasses: ['ADMIN', 'SUPER_ADMIN'],
+    guards: [guardEffectiveFromValid],
+    auditAction: 'BOOKING_TERMINATED',
+    sideEffects: () => ({ terminatedAt: new Date() }),
   },
   {
     // D4/Δ-B8 — a renter who never shows up. Releasing locks is the caller's
