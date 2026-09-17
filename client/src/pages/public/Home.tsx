@@ -1,32 +1,37 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { motion, useReducedMotion } from 'framer-motion';
 import { listPublicCars } from '../../api/cars';
 import { PublicLayout } from './PublicLayout';
 import { VideoHero } from '../../components/public/VideoHero';
 import { MakingOfSection } from '../../components/public/MakingOfSection';
+import { TestimonialsSection } from '../../components/public/TestimonialsSection';
 import { ScrollZoomHero } from '../../components/sections/ScrollZoomHero';
 import { CarCard } from '../../components/public/CarCard';
 import { CarCardSkeleton } from '../../components/public/CarCardSkeleton';
 import { EmptyState } from '../../components/public/EmptyState';
 import { Button } from '../../components/ui/Button';
 import { useAuthStore } from '../../store/auth.store';
-import { BadgePercentIcon, HandshakeIcon, SearchIcon, ShieldCheckIcon } from '../../components/ui/icons';
+import { SearchIcon } from '../../components/ui/icons';
 
 const VALUE_PROPS = [
   {
-    icon: ShieldCheckIcon,
-    title: 'Every listing, reviewed',
-    body: 'An admin reviews the car and its details by hand before a listing ever goes public — no unreviewed listings, no surprises on pickup day.',
+    step: '01',
+    title: 'Wide choice',
+    body: 'A growing range of hatchbacks, sedans and SUVs for different kinds of trips.',
+    fromX: -60, // slides in left → right
   },
   {
-    icon: HandshakeIcon,
-    title: 'Handover, in person',
-    body: 'No online payment gateway. You meet the owner, inspect the car, and pay directly — the way a car handover should work.',
+    step: '02',
+    title: 'Clear pricing',
+    body: 'Simple daily rates so you know what you’re choosing before you book.',
+    fromX: 60, // slides in right → left
   },
   {
-    icon: BadgePercentIcon,
-    title: 'Transparent daily pricing',
-    body: 'The price you see is the price you pay per day. No hidden platform fees baked into the listing.',
+    step: '03',
+    title: 'Easy booking',
+    body: 'Choose a car, send an enquiry and let us help you get your booking sorted.',
+    fromX: -60, // slides in left → right
   },
 ];
 
@@ -38,6 +43,7 @@ const STEPS = [
 
 export function HomePage() {
   const navigate = useNavigate();
+  const reducedMotion = useReducedMotion();
   const isAuthenticated = useAuthStore((state) => state.status === 'authenticated');
   const { data, isLoading, isError } = useQuery({
     queryKey: ['public-cars', 'featured'],
@@ -137,19 +143,26 @@ export function HomePage() {
       <section className="bg-surface-card">
         <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
           <h2 className="text-center font-display text-heading-lg text-neutral-900">Why rent with Rango</h2>
-          <div className="mt-10 grid grid-cols-1 gap-8 sm:grid-cols-3">
-            {VALUE_PROPS.map(({ icon: Icon, title, body }) => (
-              <div key={title} className="text-center sm:text-left">
-                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-sm bg-brand-accent-subtle text-brand-accent sm:mx-0">
-                  <Icon className="h-6 w-6" />
-                </div>
-                <h3 className="mt-4 font-display text-heading-sm text-neutral-900">{title}</h3>
+          <div className="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-3">
+            {VALUE_PROPS.map(({ step, title, body, fromX }) => (
+              <motion.div
+                key={title}
+                className="rounded-lg border border-border bg-surface-page p-6 text-center sm:text-left"
+                initial={reducedMotion ? false : { opacity: 0, x: fromX }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: true, amount: 0.4 }}
+                transition={{ duration: 0.6, ease: 'easeOut' }}
+              >
+                <span className="font-display text-heading-lg text-brand-accent/40">{step}</span>
+                <h3 className="mt-2 font-display text-heading-sm text-neutral-900">{title}</h3>
                 <p className="mt-2 text-body-md text-neutral-600">{body}</p>
-              </div>
+              </motion.div>
             ))}
           </div>
         </div>
       </section>
+
+      <TestimonialsSection />
 
       {/* How it works */}
       <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">

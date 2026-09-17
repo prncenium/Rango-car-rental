@@ -26,7 +26,7 @@ export function PublicFooter() {
           </nav>
         </div>
         <p className="mt-8 text-caption text-neutral-400">
-          © {new Date().getFullYear()} Rango Car Rental. All rights reserved.
+          © {new Date().getFullYear()} Rango Car Rental. All rights reserved. (@prncenium)
         </p>
       </div>
     </footer>
