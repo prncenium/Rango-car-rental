@@ -4,6 +4,7 @@ import { listPublicCars } from '../../api/cars';
 import { PublicLayout } from './PublicLayout';
 import { VideoHero } from '../../components/public/VideoHero';
 import { MakingOfSection } from '../../components/public/MakingOfSection';
+import { ScrollZoomHero } from '../../components/sections/ScrollZoomHero';
 import { CarCard } from '../../components/public/CarCard';
 import { CarCardSkeleton } from '../../components/public/CarCardSkeleton';
 import { EmptyState } from '../../components/public/EmptyState';
@@ -123,6 +124,14 @@ export function HomePage() {
           </Button>
         </div>
       </section>
+
+      <ScrollZoomHero
+        imageUrl="https://res.cloudinary.com/gitn9iob/image/upload/v1789638457/ChatGPT_Image_Sep_17_2026_03_15_21_PM.png"
+        imageAlt="A car from the Rango fleet, ready to be rented"
+        eyebrow="Rango"
+        heading="Rent cars."
+        body="No middleman apps, no hidden fees — just a real car, a real person, and the keys in your hand."
+      />
 
       {/* Value proposition */}
       <section className="bg-surface-card">
