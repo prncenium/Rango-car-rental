@@ -6,8 +6,10 @@ export function PublicFooter() {
       <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
         <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <span className="font-display text-heading-sm text-brand-primary">Rango</span>
-            <p className="mt-1 text-body-sm text-neutral-500">
+            <span className="inline-flex items-center rounded-md bg-brand-primary px-3 py-1.5">
+              <img src="/logo.png" alt="Rango Car Rental" className="h-6 w-auto" />
+            </span>
+            <p className="mt-2 text-body-sm text-neutral-500">
               Every listing admin-approved. Every handover, in person.
             </p>
           </div>

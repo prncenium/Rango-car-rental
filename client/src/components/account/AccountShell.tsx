@@ -63,8 +63,8 @@ export function AccountShell({ children }: { children: ReactNode }) {
     <div className="flex min-h-screen flex-col bg-surface-page">
       <header className="bg-brand-primary text-neutral-0">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6 lg:px-8">
-          <NavLink to="/" className="font-display text-heading-md">
-            Rango
+          <NavLink to="/">
+            <img src="/logo.png" alt="Rango Car Rental" className="h-8 w-auto" />
           </NavLink>
           <div className="flex items-center gap-4">
             {user && <span className="hidden text-body-sm text-neutral-0/85 sm:inline">{user.name}</span>}

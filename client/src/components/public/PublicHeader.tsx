@@ -22,8 +22,8 @@ export function PublicHeader() {
   return (
     <header className="sticky top-0 z-30 bg-brand-primary text-neutral-0">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-        <Link to="/" className="font-display text-heading-md" onClick={() => setOpen(false)}>
-          Rango
+        <Link to="/" onClick={() => setOpen(false)}>
+          <img src="/logo.png" alt="Rango Car Rental" className="h-9 w-auto" />
         </Link>
 
         <nav className="hidden items-center gap-8 md:flex">

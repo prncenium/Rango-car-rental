@@ -21,8 +21,8 @@ export function AuthLayout({
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
       <div className="hidden flex-col justify-between bg-brand-primary px-12 py-12 text-neutral-0 lg:flex">
-        <Link to="/" className="font-display text-heading-md">
-          Rango
+        <Link to="/">
+          <img src="/logo.png" alt="Rango Car Rental" className="h-9 w-auto" />
         </Link>
         <div className="max-w-md">
           <p className="font-display text-display-md leading-tight">Rental, run properly.</p>
@@ -37,8 +37,8 @@ export function AuthLayout({
 
       <div className="flex items-center justify-center bg-surface-page px-4 py-12 sm:px-8">
         <div className="w-full max-w-md">
-          <Link to="/" className="font-display text-heading-md text-brand-primary lg:hidden">
-            Rango
+          <Link to="/" className="inline-flex items-center rounded-md bg-brand-primary px-3 py-1.5 lg:hidden">
+            <img src="/logo.png" alt="Rango Car Rental" className="h-6 w-auto" />
           </Link>
           <h1 className="mt-4 font-display text-display-md text-neutral-900 lg:mt-0">{title}</h1>
           <p className="mt-2 text-body-md text-neutral-600">{subtitle}</p>

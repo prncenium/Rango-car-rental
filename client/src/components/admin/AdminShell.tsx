@@ -83,8 +83,9 @@ export function AdminShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen bg-surface-page">
       <aside className="hidden w-64 shrink-0 flex-col bg-brand-primary px-3 py-4 text-neutral-0 lg:flex">
-        <div className="px-2 pb-4">
-          <span className="font-display text-heading-md">Rango Admin</span>
+        <div className="flex items-center gap-2 px-2 pb-4">
+          <img src="/logo.png" alt="Rango Car Rental" className="h-7 w-auto" />
+          <span className="text-caption font-medium uppercase tracking-wide text-neutral-0/70">Admin</span>
         </div>
         <nav className="flex flex-1 flex-col gap-1">
           {NAV_ITEMS.map((item) => {
@@ -115,7 +116,10 @@ export function AdminShell({ children }: { children: ReactNode }) {
 
       {/* Below `lg`: a top bar with the same nav, collapsing per docs/design/03-design-system.md §7 */}
       <header className="fixed inset-x-0 top-0 z-20 flex h-14 items-center justify-between border-b border-border bg-brand-primary px-4 text-neutral-0 lg:hidden">
-        <span className="font-display text-heading-sm">Rango Admin</span>
+        <div className="flex items-center gap-1.5">
+          <img src="/logo.png" alt="Rango Car Rental" className="h-6 w-auto" />
+          <span className="text-caption font-medium uppercase tracking-wide text-neutral-0/70">Admin</span>
+        </div>
         <nav className="flex items-center gap-3">
           {NAV_ITEMS.map((item) => (
             <NavLink

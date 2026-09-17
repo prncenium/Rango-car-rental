@@ -11,3 +11,4 @@ Thumbs.db
 .idea/
 *.tsbuildinfo
 coverage/
+.mongo-data-dev/

@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { listPublicCars } from '../../api/cars';
 import { PublicLayout } from './PublicLayout';
 import { VideoHero } from '../../components/public/VideoHero';
+import { MakingOfSection } from '../../components/public/MakingOfSection';
 import { CarCard } from '../../components/public/CarCard';
 import { CarCardSkeleton } from '../../components/public/CarCardSkeleton';
 import { EmptyState } from '../../components/public/EmptyState';
@@ -76,6 +77,8 @@ export function HomePage() {
           </Link>
         </div>
       </VideoHero>
+
+      <MakingOfSection />
 
       {/* Featured / recent listings */}
       <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
