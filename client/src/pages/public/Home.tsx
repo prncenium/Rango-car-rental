@@ -1,10 +1,10 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { motion, useReducedMotion } from 'framer-motion';
 import { listPublicCars } from '../../api/cars';
 import { PublicLayout } from './PublicLayout';
 import { VideoHero } from '../../components/public/VideoHero';
 import { MakingOfSection } from '../../components/public/MakingOfSection';
+import { WhyRentSection } from '../../components/public/WhyRentSection';
 import { TestimonialsSection } from '../../components/public/TestimonialsSection';
 import { ScrollZoomHero } from '../../components/sections/ScrollZoomHero';
 import { CarCard } from '../../components/public/CarCard';
@@ -14,27 +14,6 @@ import { Button } from '../../components/ui/Button';
 import { useAuthStore } from '../../store/auth.store';
 import { SearchIcon } from '../../components/ui/icons';
 
-const VALUE_PROPS = [
-  {
-    step: '01',
-    title: 'Wide choice',
-    body: 'A growing range of hatchbacks, sedans and SUVs for different kinds of trips.',
-    fromX: -60, // slides in left → right
-  },
-  {
-    step: '02',
-    title: 'Clear pricing',
-    body: 'Simple daily rates so you know what you’re choosing before you book.',
-    fromX: 60, // slides in right → left
-  },
-  {
-    step: '03',
-    title: 'Easy booking',
-    body: 'Choose a car, send an enquiry and let us help you get your booking sorted.',
-    fromX: -60, // slides in left → right
-  },
-];
-
 const STEPS = [
   { step: '01', title: 'Browse & filter', body: 'Search by city, price, seats, and more to find the right car.' },
   { step: '02', title: 'Request a booking', body: 'Send a request for your dates — the owner and admin review it.' },
@@ -43,7 +22,6 @@ const STEPS = [
 
 export function HomePage() {
   const navigate = useNavigate();
-  const reducedMotion = useReducedMotion();
   const isAuthenticated = useAuthStore((state) => state.status === 'authenticated');
   const { data, isLoading, isError } = useQuery({
     queryKey: ['public-cars', 'featured'],
@@ -139,28 +117,7 @@ export function HomePage() {
         body="No middleman apps, no hidden fees — just a real car, a real person, and the keys in your hand."
       />
 
-      {/* Value proposition */}
-      <section className="bg-surface-card">
-        <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
-          <h2 className="text-center font-display text-heading-lg text-neutral-900">Why rent with Rango</h2>
-          <div className="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-3">
-            {VALUE_PROPS.map(({ step, title, body, fromX }) => (
-              <motion.div
-                key={title}
-                className="rounded-lg border border-border bg-surface-page p-6 text-center sm:text-left"
-                initial={reducedMotion ? false : { opacity: 0, x: fromX }}
-                whileInView={{ opacity: 1, x: 0 }}
-                viewport={{ once: true, amount: 0.4 }}
-                transition={{ duration: 0.6, ease: 'easeOut' }}
-              >
-                <span className="font-display text-heading-lg text-brand-accent/40">{step}</span>
-                <h3 className="mt-2 font-display text-heading-sm text-neutral-900">{title}</h3>
-                <p className="mt-2 text-body-md text-neutral-600">{body}</p>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
+      <WhyRentSection />
 
       <TestimonialsSection />
 
