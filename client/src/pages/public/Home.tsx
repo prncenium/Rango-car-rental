@@ -6,6 +6,7 @@ import { VideoHero } from '../../components/public/VideoHero';
 import { MakingOfSection } from '../../components/public/MakingOfSection';
 import { WhyRentSection } from '../../components/public/WhyRentSection';
 import { TestimonialsSection } from '../../components/public/TestimonialsSection';
+import { HowItWorksSection } from '../../components/public/HowItWorksSection';
 import { ScrollZoomHero } from '../../components/sections/ScrollZoomHero';
 import { CarCard } from '../../components/public/CarCard';
 import { CarCardSkeleton } from '../../components/public/CarCardSkeleton';
@@ -13,12 +14,6 @@ import { EmptyState } from '../../components/public/EmptyState';
 import { Button } from '../../components/ui/Button';
 import { useAuthStore } from '../../store/auth.store';
 import { SearchIcon } from '../../components/ui/icons';
-
-const STEPS = [
-  { step: '01', title: 'Browse & filter', body: 'Search by city, price, seats, and more to find the right car.' },
-  { step: '02', title: 'Request a booking', body: 'Send a request for your dates — the owner and admin review it.' },
-  { step: '03', title: 'Meet & drive off', body: 'Confirm in person, hand over payment, and take the keys.' },
-];
 
 export function HomePage() {
   const navigate = useNavigate();
@@ -121,19 +116,7 @@ export function HomePage() {
 
       <TestimonialsSection />
 
-      {/* How it works */}
-      <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
-        <h2 className="text-center font-display text-heading-lg text-neutral-900">How it works</h2>
-        <div className="mt-10 grid grid-cols-1 gap-8 sm:grid-cols-3">
-          {STEPS.map(({ step, title, body }) => (
-            <div key={step} className="relative rounded-lg border border-border bg-surface-card p-6">
-              <span className="font-display text-heading-lg text-brand-accent/40">{step}</span>
-              <h3 className="mt-2 font-display text-heading-sm text-neutral-900">{title}</h3>
-              <p className="mt-2 text-body-md text-neutral-600">{body}</p>
-            </div>
-          ))}
-        </div>
-      </section>
+      <HowItWorksSection />
     </PublicLayout>
   );
 }

@@ -33,6 +33,9 @@ export function PublicHeader() {
           <NavLink to="/cars" className={navLinkClass}>
             Browse cars
           </NavLink>
+          <NavLink to="/about" className={navLinkClass}>
+            About us
+          </NavLink>
         </nav>
 
         <div className="hidden items-center gap-3 md:flex">
@@ -73,6 +76,13 @@ export function PublicHeader() {
               className="rounded-sm px-2 py-2.5 text-body-md text-neutral-0/85 hover:bg-neutral-0/10"
             >
               Browse cars
+            </Link>
+            <Link
+              to="/about"
+              onClick={() => setOpen(false)}
+              className="rounded-sm px-2 py-2.5 text-body-md text-neutral-0/85 hover:bg-neutral-0/10"
+            >
+              About us
             </Link>
             <div className="mt-2 flex items-center gap-3 border-t border-neutral-0/10 pt-3">
               <Link to="/login" onClick={() => setOpen(false)} className="text-body-md text-neutral-0/85">
