@@ -59,13 +59,56 @@ export function AccountShell({ children }: { children: ReactNode }) {
         : 'border-b-2 border-transparent text-neutral-500 hover:text-neutral-800',
     );
 
+  const topNavLinkClass = ({ isActive }: { isActive: boolean }) =>
+    cn(
+      'text-body-md transition-colors',
+      isActive ? 'text-brand-accent' : 'text-neutral-0/85 hover:text-neutral-0',
+    );
+
   return (
     <div className="flex min-h-screen flex-col bg-surface-page">
       <header className="bg-brand-primary text-neutral-0">
-        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6 lg:px-8">
-          <NavLink to="/">
+        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+          <NavLink to="/" className="shrink-0">
             <img src="/logo.png" alt="Rango Car Rental" className="h-8 w-auto" />
           </NavLink>
+
+          <nav className="hidden items-center gap-6 md:flex">
+            <NavLink to="/" end className={topNavLinkClass}>
+              Home
+            </NavLink>
+            <NavLink to="/cars" className={topNavLinkClass}>
+              Browse cars
+            </NavLink>
+            <div className="group relative">
+              <button
+                type="button"
+                className="flex items-center gap-1 py-2 text-body-md text-neutral-0/85 transition-colors hover:text-neutral-0"
+              >
+                Service
+              </button>
+              <div className="invisible absolute left-1/2 top-full z-40 w-48 -translate-x-1/2 pt-2 opacity-0 transition-opacity group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
+                <div className="overflow-hidden rounded-md border border-border bg-surface-card py-1 shadow-lg">
+                  <NavLink
+                    to="/account/bookings"
+                    className="block px-4 py-2.5 text-body-sm text-neutral-800 hover:bg-neutral-100"
+                  >
+                    My requests
+                  </NavLink>
+                  <NavLink
+                    to="/account/listings"
+                    className="block px-4 py-2.5 text-body-sm text-neutral-800 hover:bg-neutral-100"
+                  >
+                    My listings
+                  </NavLink>
+                </div>
+              </div>
+            </div>
+            <NavLink to="/about" className={topNavLinkClass}>
+              About us
+            </NavLink>
+          </nav>
+
           <div className="flex items-center gap-4">
             {user && <span className="hidden text-body-sm text-neutral-0/85 sm:inline">{user.name}</span>}
             <button

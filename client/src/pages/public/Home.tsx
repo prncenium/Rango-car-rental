@@ -7,6 +7,7 @@ import { MakingOfSection } from '../../components/public/MakingOfSection';
 import { WhyRentSection } from '../../components/public/WhyRentSection';
 import { TestimonialsSection } from '../../components/public/TestimonialsSection';
 import { HowItWorksSection } from '../../components/public/HowItWorksSection';
+import { PreFooterSection } from '../../components/public/PreFooterSection';
 import { ScrollZoomHero } from '../../components/sections/ScrollZoomHero';
 import { CarCard } from '../../components/public/CarCard';
 import { CarCardSkeleton } from '../../components/public/CarCardSkeleton';
@@ -112,11 +113,13 @@ export function HomePage() {
         body="No middleman apps, no hidden fees — just a real car, a real person, and the keys in your hand."
       />
 
-      <WhyRentSection />
+      <HowItWorksSection />
 
       <TestimonialsSection />
 
-      <HowItWorksSection />
+      <WhyRentSection />
+
+      <PreFooterSection />
     </PublicLayout>
   );
 }

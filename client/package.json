@@ -10,7 +10,7 @@
     "typecheck": "tsc -b"
   },
   "dependencies": {
-    "@hookform/resolvers": "^3.9.1",
+    "@hookform/resolvers": "^5.9.1",
     "@rango/shared": "*",
     "@tanstack/react-query": "^5.62.0",
     "framer-motion": "^13.4.0",

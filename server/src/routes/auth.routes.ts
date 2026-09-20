@@ -29,10 +29,20 @@ function baseCookieOptions() {
   };
 }
 
+// rgo_csrf must be readable by client JS (document.cookie) from any page in
+// the SPA, not just paths under /api — a cookie scoped to Path=/api is
+// invisible to document.cookie on e.g. /account/listings/1/edit, which
+// silently breaks the double-submit CSRF header on every write. The
+// httpOnly session cookies stay scoped to /api since only the server ever
+// needs them, and only on /api requests.
+function csrfCookieOptions() {
+  return { ...baseCookieOptions(), path: '/', httpOnly: false };
+}
+
 function setAuthCookies(res: Response, tokens: AuthTokens): void {
   res.cookie('rgo_at', tokens.accessToken, { ...baseCookieOptions(), httpOnly: true, maxAge: ACCESS_TOKEN_MAX_AGE_MS });
   res.cookie('rgo_rt', tokens.refreshToken, { ...baseCookieOptions(), httpOnly: true, maxAge: REFRESH_TOKEN_MAX_AGE_MS });
-  res.cookie('rgo_csrf', tokens.csrfToken, { ...baseCookieOptions(), httpOnly: false });
+  res.cookie('rgo_csrf', tokens.csrfToken, csrfCookieOptions());
 }
 
 // Re-issuing with Max-Age=0 and the identical attribute set is what actually
@@ -40,7 +50,7 @@ function setAuthCookies(res: Response, tokens: AuthTokens): void {
 function clearAuthCookies(res: Response): void {
   res.clearCookie('rgo_at', { ...baseCookieOptions(), httpOnly: true });
   res.clearCookie('rgo_rt', { ...baseCookieOptions(), httpOnly: true });
-  res.clearCookie('rgo_csrf', { ...baseCookieOptions(), httpOnly: false });
+  res.clearCookie('rgo_csrf', csrfCookieOptions());
 }
 
 router.post('/register', async (req, res, next) => {
