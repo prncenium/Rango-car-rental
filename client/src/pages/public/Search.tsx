@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { listPublicCars, type PublicCarQuery, type SortOption } from '../../api/cars';
 import { PublicLayout } from './PublicLayout';
+import { PageHero } from '../../components/public/PageHero';
+import { PreFooterSection } from '../../components/public/PreFooterSection';
 import { CarCard } from '../../components/public/CarCard';
 import { CarCardSkeleton } from '../../components/public/CarCardSkeleton';
 import { EmptyState } from '../../components/public/EmptyState';
@@ -10,7 +12,7 @@ import { useDebouncedValue } from '../../lib/useDebouncedValue';
 import { Button } from '../../components/ui/Button';
 import { Select } from '../../components/ui/Select';
 import { Modal, ModalBody, ModalFooter } from '../../components/ui/Modal';
-import { ChevronLeftIcon, ChevronRightIcon, SlidersIcon } from '../../components/ui/icons';
+import { ChevronLeftIcon, ChevronRightIcon, GearIcon, MapPinIcon, SearchIcon, SlidersIcon } from '../../components/ui/icons';
 
 const SORT_OPTIONS: { value: SortOption; label: string }[] = [
   { value: 'publishedAt:desc', label: 'Newest first' },
@@ -68,6 +70,10 @@ export function SearchPage() {
     setPage(1);
   }
 
+  function scrollToResults() {
+    document.getElementById('results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
   const activeChips: { key: string; label: string; onRemove: () => void }[] = [
     ...(filters.q ? [{ key: 'q', label: `"${filters.q}"`, onRemove: () => updateFilters({ ...filters, q: '' }) }] : []),
     ...(filters.city ? [{ key: 'city', label: filters.city, onRemove: () => updateFilters({ ...filters, city: '' }) }] : []),
@@ -97,13 +103,66 @@ export function SearchPage() {
 
   return (
     <PublicLayout>
-      <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
-        <h1 className="font-display text-display-md text-neutral-900">Browse cars</h1>
-        <p className="mt-2 text-body-md text-neutral-600">
-          Every car below is admin-approved and currently listed.
-        </p>
+      <PageHero
+        eyebrow="Admin-approved listings"
+        title="Browse cars"
+        subcopy="Every car below is admin-approved and currently listed."
+        // PageHero crossfades through every entry here every 3s.
+        backgroundImages={[
+          'https://res.cloudinary.com/gitn9iob/image/upload/v1789912528/Gemini_Generated_Image_by8x9cby8x9cby8x.png',
+          'https://res.cloudinary.com/gitn9iob/image/upload/v1789916056/ChatGPT_Image_Sep_20_2026_08_23_55_PM.png',
+          'https://res.cloudinary.com/gitn9iob/image/upload/v1789916057/Gemini_Generated_Image_sus1sssus1sssus1.png',
+        ]}
+        content={
+          <div className="max-w-3xl">
+            <div className="flex flex-col gap-4 rounded-lg bg-surface-card p-4 shadow-lg sm:flex-row sm:items-end sm:p-5">
+              <div className="flex-1">
+                <label htmlFor="hero-city" className="flex items-center gap-1.5 text-caption font-medium uppercase tracking-wide text-neutral-500">
+                  <MapPinIcon className="h-3.5 w-3.5 text-brand-accent" />
+                  City
+                </label>
+                <input
+                  id="hero-city"
+                  value={filters.city}
+                  onChange={(e) => updateFilters({ ...filters, city: e.target.value })}
+                  placeholder="e.g. Vadodara"
+                  className="mt-1.5 h-11 w-full rounded-sm border border-border-strong bg-surface-sunken px-3 text-body-md text-neutral-900 placeholder:text-neutral-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus-ring"
+                />
+              </div>
+              <div className="flex-1">
+                <label htmlFor="hero-transmission" className="flex items-center gap-1.5 text-caption font-medium uppercase tracking-wide text-neutral-500">
+                  <GearIcon className="h-3.5 w-3.5 text-brand-accent" />
+                  Transmission
+                </label>
+                <select
+                  id="hero-transmission"
+                  value={filters.transmission[0] ?? ''}
+                  onChange={(e) => updateFilters({ ...filters, transmission: e.target.value ? [e.target.value] : [] })}
+                  className="mt-1.5 h-11 w-full rounded-sm border border-border-strong bg-surface-sunken px-3 text-body-md text-neutral-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus-ring"
+                >
+                  <option value="">Any</option>
+                  <option value="MANUAL">Manual</option>
+                  <option value="AUTOMATIC">Automatic</option>
+                </select>
+              </div>
+              <Button variant="primary" size="lg" className="sm:w-auto" onClick={scrollToResults}>
+                <SearchIcon className="h-4 w-4" />
+                Search
+              </Button>
+            </div>
 
-        <div className="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-[260px_1fr]">
+            <div className="mt-6 flex flex-wrap items-center gap-3">
+              <p className="text-body-sm text-neutral-100">Ready to drive today?</p>
+              <Button variant="primary" onClick={scrollToResults}>
+                Book now
+              </Button>
+            </div>
+          </div>
+        }
+      />
+
+      <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-[260px_1fr]">
           {/* Sidebar — persistent at lg+ */}
           <aside className="hidden lg:block">
             <div className="sticky top-24 rounded-lg border border-border bg-surface-card p-5">
@@ -111,7 +170,7 @@ export function SearchPage() {
             </div>
           </aside>
 
-          <div>
+          <div id="results">
             {/* Toolbar: mobile filter trigger + sort + result count */}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-3">
@@ -211,6 +270,14 @@ export function SearchPage() {
           </div>
         </div>
       </div>
+
+      <PreFooterSection
+        eyebrow="Have a car of your own?"
+        heading="List it, and let an admin get it in front of real renters."
+        body="Every listing is reviewed before it goes public — no payment gateway, no unvetted cars, handover happens in person."
+        showBrowseCta={false}
+        backgroundImage="https://res.cloudinary.com/gitn9iob/image/upload/v1789912349/ChatGPT_Image_Sep_20_2026_07_22_18_PM.png"
+      />
 
       {/* Mobile filter drawer */}
       <Modal open={drawerOpen} onClose={() => setDrawerOpen(false)} title="Filters">

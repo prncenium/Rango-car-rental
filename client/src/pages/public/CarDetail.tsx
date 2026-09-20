@@ -4,6 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import { getPublicAvailability, getPublicCarDetail } from '../../api/cars';
 import { ApiError } from '../../lib/apiClient';
 import { PublicLayout } from './PublicLayout';
+import { PageHero } from '../../components/public/PageHero';
+import { PreFooterSection } from '../../components/public/PreFooterSection';
 import { AvailabilityCalendar } from '../../components/public/AvailabilityCalendar';
 import { EmptyState } from '../../components/public/EmptyState';
 import { Button } from '../../components/ui/Button';
@@ -104,18 +106,26 @@ export function CarDetailPage() {
 
   return (
     <PublicLayout>
-      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        <nav className="text-body-sm text-neutral-500" aria-label="Breadcrumb">
-          <Link to="/cars" className="hover:text-brand-accent hover:underline">
-            Cars
-          </Link>
-          <span className="mx-1.5">/</span>
-          <span className="text-neutral-700">
-            {car.make} {car.model}
-          </span>
-        </nav>
+      <PageHero
+        breadcrumb={
+          <nav className="text-body-sm text-neutral-200" aria-label="Breadcrumb">
+            <Link to="/cars" className="hover:text-brand-accent hover:underline">
+              Cars
+            </Link>
+            <span className="mx-1.5">/</span>
+            <span className="text-neutral-0">
+              {car.make} {car.model}
+            </span>
+          </nav>
+        }
+        eyebrow="Admin-approved listing"
+        title={`${car.make} ${car.model} ${car.year}`}
+        subcopy={`${car.location.city}, ${car.location.state} · ₹${car.rentalPricePerDay.toLocaleString('en-IN')} / day`}
+        backgroundImage="https://res.cloudinary.com/gitn9iob/image/upload/v1789915305/Gemini_Generated_Image_wv0rrcwv0rrcwv0r.png"
+      />
 
-        <div className="mt-4 grid grid-cols-1 gap-8 lg:grid-cols-[1fr_360px]">
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1fr_360px]">
           {/* Photo gallery */}
           <div>
             <div className="aspect-[4/3] overflow-hidden rounded-lg border border-border bg-surface-sunken">
@@ -242,6 +252,14 @@ export function CarDetailPage() {
           </aside>
         </div>
       </div>
+
+      <PreFooterSection
+        eyebrow="Sending a request costs nothing"
+        heading={`Ready to make the ${car.make} ${car.model} yours?`}
+        body="Request to book above — an admin reviews it and you're contacted to confirm the handover in person, no online payment involved."
+        showBrowseCta={false}
+        backgroundImage="https://res.cloudinary.com/gitn9iob/image/upload/v1789915336/Gemini_Generated_Image_jk6v9djk6v9djk6v.png"
+      />
     </PublicLayout>
   );
 }

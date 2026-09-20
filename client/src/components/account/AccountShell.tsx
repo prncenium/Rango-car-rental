@@ -83,30 +83,69 @@ export function AccountShell({ children }: { children: ReactNode }) {
             <div className="group relative">
               <button
                 type="button"
-                className="flex items-center gap-1 py-2 text-body-md text-neutral-0/85 transition-colors hover:text-neutral-0"
+                className="flex cursor-default items-center gap-1 py-2 text-body-md text-neutral-0/85 transition-colors hover:text-neutral-0"
               >
                 Service
               </button>
-              <div className="invisible absolute left-1/2 top-full z-40 w-48 -translate-x-1/2 pt-2 opacity-0 transition-opacity group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
-                <div className="overflow-hidden rounded-md border border-border bg-surface-card py-1 shadow-lg">
+              <div className="invisible absolute left-1/2 top-full z-40 w-52 -translate-x-1/2 pt-3 opacity-0 transition-opacity group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
+                <div className="divide-y divide-border overflow-hidden rounded-md border border-border-strong bg-surface-card py-1 shadow-lg ring-1 ring-neutral-900/5">
                   <NavLink
                     to="/account/bookings"
-                    className="block px-4 py-2.5 text-body-sm text-neutral-800 hover:bg-neutral-100"
+                    className="block px-4 py-2.5 text-body-sm text-neutral-800 hover:bg-brand-accent-subtle hover:text-brand-primary"
                   >
                     My requests
                   </NavLink>
                   <NavLink
                     to="/account/listings"
-                    className="block px-4 py-2.5 text-body-sm text-neutral-800 hover:bg-neutral-100"
+                    className="block px-4 py-2.5 text-body-sm text-neutral-800 hover:bg-brand-accent-subtle hover:text-brand-primary"
                   >
                     My listings
+                  </NavLink>
+                  <NavLink
+                    to="/account/profile"
+                    className="block px-4 py-2.5 text-body-sm text-neutral-800 hover:bg-brand-accent-subtle hover:text-brand-primary"
+                  >
+                    Profile
                   </NavLink>
                 </div>
               </div>
             </div>
-            <NavLink to="/about" className={topNavLinkClass}>
-              About us
-            </NavLink>
+            <div className="group relative">
+              <button
+                type="button"
+                className="flex cursor-default items-center gap-1 py-2 text-body-md text-neutral-0/85 transition-colors hover:text-neutral-0"
+              >
+                Library
+              </button>
+              <div className="invisible absolute left-1/2 top-full z-40 w-52 -translate-x-1/2 pt-3 opacity-0 transition-opacity group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
+                <div className="divide-y divide-border overflow-hidden rounded-md border border-border-strong bg-surface-card py-1 shadow-lg ring-1 ring-neutral-900/5">
+                  <NavLink to="/library/videos" className="block px-4 py-2.5 text-body-sm text-neutral-800 hover:bg-brand-accent-subtle hover:text-brand-primary">
+                    Videos
+                  </NavLink>
+                  <NavLink to="/library/blogs" className="block px-4 py-2.5 text-body-sm text-neutral-800 hover:bg-brand-accent-subtle hover:text-brand-primary">
+                    Blogs
+                  </NavLink>
+                </div>
+              </div>
+            </div>
+            <div className="group relative">
+              <button
+                type="button"
+                className="flex cursor-default items-center gap-1 py-2 text-body-md text-neutral-0/85 transition-colors hover:text-neutral-0"
+              >
+                About
+              </button>
+              <div className="invisible absolute left-1/2 top-full z-40 w-52 -translate-x-1/2 pt-3 opacity-0 transition-opacity group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
+                <div className="divide-y divide-border overflow-hidden rounded-md border border-border-strong bg-surface-card py-1 shadow-lg ring-1 ring-neutral-900/5">
+                  <NavLink to="/about/team" className="block px-4 py-2.5 text-body-sm text-neutral-800 hover:bg-brand-accent-subtle hover:text-brand-primary">
+                    The team
+                  </NavLink>
+                  <NavLink to="/about/contact" className="block px-4 py-2.5 text-body-sm text-neutral-800 hover:bg-brand-accent-subtle hover:text-brand-primary">
+                    Contact us
+                  </NavLink>
+                </div>
+              </div>
+            </div>
           </nav>
 
           <div className="flex items-center gap-4">

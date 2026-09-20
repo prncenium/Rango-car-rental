@@ -1,0 +1,89 @@
+import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
+
+const SLIDE_INTERVAL_MS = 2500;
+
+function usePrefersReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const handler = (e: MediaQueryListEvent) => setReduced(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+  return reduced;
+}
+
+// docs/design/04-hero-sections.md — shared static hero band for public pages
+// other than Home (which keeps its own scroll-linked VideoHero). No
+// background image is wired in yet for any caller; `backgroundImage` stays
+// optional and falls back to the flat brand-primary surface until real
+// photography is chosen per page.
+export function PageHero({
+  breadcrumb,
+  eyebrow,
+  title,
+  subcopy,
+  backgroundImage,
+  backgroundImages,
+  actions,
+  content,
+}: {
+  /** Rendered above eyebrow/title, e.g. a "Cars / Model name" trail. */
+  breadcrumb?: ReactNode;
+  eyebrow?: string;
+  title: ReactNode;
+  subcopy?: string;
+  backgroundImage?: string;
+  /** 2+ images to crossfade through every 3s. Takes precedence over `backgroundImage`. Frozen on the first image when the visitor prefers reduced motion. */
+  backgroundImages?: string[];
+  actions?: ReactNode;
+  /** Freeform block rendered below actions (e.g. a quick-search card) — its own layout, no wrapper styling. */
+  content?: ReactNode;
+}) {
+  const slides = backgroundImages && backgroundImages.length > 0 ? backgroundImages : backgroundImage ? [backgroundImage] : [];
+  const reducedMotion = usePrefersReducedMotion();
+  const [activeSlide, setActiveSlide] = useState(0);
+
+  useEffect(() => {
+    if (slides.length < 2 || reducedMotion) return;
+    const id = setInterval(() => {
+      setActiveSlide((i) => (i + 1) % slides.length);
+    }, SLIDE_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [slides.length, reducedMotion]);
+
+  return (
+    <div className="relative flex min-h-[340px] items-center bg-brand-primary sm:min-h-[440px] lg:min-h-[800px]">
+      {slides.map((src, i) => (
+        <div
+          key={src}
+          aria-hidden={i !== activeSlide}
+          className={`absolute inset-0 bg-cover bg-center transition-opacity duration-1000 ${
+            i === activeSlide ? 'opacity-100' : 'opacity-0'
+          }`}
+          style={{ backgroundImage: `url(${src})` }}
+        />
+      ))}
+      {/* Legibility scrim — same surface-overlay token regardless of whether
+          a background image is present, so contrast never regresses once one is added. */}
+      <div className="absolute inset-0 bg-neutral-900/55" aria-hidden="true" />
+      <div className="relative mx-auto w-full max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+        {breadcrumb && <div className="mb-3">{breadcrumb}</div>}
+        {eyebrow && (
+          <p className="text-caption uppercase tracking-wide text-brand-accent lg:text-body-sm">{eyebrow}</p>
+        )}
+        <h1 className="mt-2 font-display text-display-md text-neutral-0 lg:mt-4 lg:text-display-lg">{title}</h1>
+        {subcopy && (
+          <p className="mt-3 max-w-2xl text-body-lg text-neutral-100 lg:mt-5 lg:max-w-3xl lg:text-heading-sm lg:font-normal">
+            {subcopy}
+          </p>
+        )}
+        {actions && <div className="mt-6 flex flex-wrap gap-3 lg:mt-8">{actions}</div>}
+        {content && <div className="mt-8 lg:mt-10">{content}</div>}
+      </div>
+    </div>
+  );
+}

@@ -1,9 +1,11 @@
 import { Navigate, Routes, Route } from 'react-router-dom';
+import { ScrollToTop } from './components/ScrollToTop';
 import { LoginPage } from './pages/auth/Login';
 import { RegisterPage } from './pages/auth/Register';
 import { ResetPasswordPage } from './pages/auth/ResetPassword';
 import { HomePage } from './pages/public/Home';
-import { AboutPage } from './pages/public/About';
+import { TeamPage, ContactPage } from './pages/public/About';
+import { VideosPage, BlogsPage } from './pages/public/Library';
 import { SearchPage } from './pages/public/Search';
 import { CarDetailPage } from './pages/public/CarDetail';
 import { BookingRequestPage } from './pages/public/BookingRequest';
@@ -23,10 +25,16 @@ import { AdminUserDetailPage } from './pages/admin/UserDetail';
 
 export function App() {
   return (
-    <Routes>
+    <>
+      <ScrollToTop />
+      <Routes>
       <Route path="/" element={<HomePage />} />
       <Route path="/cars" element={<SearchPage />} />
-      <Route path="/about" element={<AboutPage />} />
+      <Route path="/about" element={<Navigate to="/about/team" replace />} />
+      <Route path="/about/team" element={<TeamPage />} />
+      <Route path="/about/contact" element={<ContactPage />} />
+      <Route path="/library/videos" element={<VideosPage />} />
+      <Route path="/library/blogs" element={<BlogsPage />} />
       <Route path="/cars/:carId" element={<CarDetailPage />} />
       <Route path="/cars/:carId/request" element={<BookingRequestPage />} />
       <Route path="/login" element={<LoginPage />} />
@@ -50,6 +58,7 @@ export function App() {
       <Route path="/admin/users" element={<AdminUsersPage />} />
       <Route path="/admin/users/:userId" element={<AdminUserDetailPage />} />
       <Route path="/admin/audit" element={<AdminAuditLogPage />} />
-    </Routes>
+      </Routes>
+    </>
   );
 }
