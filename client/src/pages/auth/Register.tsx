@@ -2,6 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { registerDto, type RegisterDto } from '@rango/shared';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
+import type { z } from 'zod';
 import { Link, useNavigate } from 'react-router-dom';
 import * as authApi from '../../api/auth.api';
 import { Button, Card, CardBody, Input } from '../../components/ui';
@@ -26,12 +27,19 @@ export function RegisterPage() {
     }
   }, [status, navigate]);
 
+  // Triple-generic useForm — registerDto's drivingLicenceExpiryDate uses
+  // z.coerce.date(), whose input type (unknown, pre-coercion) differs from
+  // its output type (Date), which zodResolver's Resolver<Input, Context,
+  // Output> reflects exactly. A single-generic useForm<RegisterDto> forces
+  // TFieldValues to the *output* shape and fails to typecheck against that
+  // resolver under exactOptionalPropertyTypes; the fix is to give useForm
+  // the real input/output split rather than collapsing it to one type.
   const {
     register,
     handleSubmit,
     setError,
     formState: { errors, isSubmitting },
-  } = useForm<RegisterDto>({ resolver: zodResolver(registerDto) });
+  } = useForm<z.input<typeof registerDto>, unknown, RegisterDto>({ resolver: zodResolver(registerDto) });
 
   const onSubmit = handleSubmit(async (values) => {
     setFormError(null);

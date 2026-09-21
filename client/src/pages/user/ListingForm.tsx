@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import type { UseFormRegister } from 'react-hook-form';
+import type { z } from 'zod';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -70,12 +71,16 @@ function CreateListingForm() {
   const navigate = useNavigate();
   const [formError, setFormError] = useState<string | null>(null);
 
+  // Triple-generic useForm — createCarDto's `images` uses `.default([])`,
+  // whose input type (string[] | undefined) differs from its output type
+  // (string[], always present), same exactOptionalPropertyTypes mismatch as
+  // Register.tsx's coerced date field.
   const {
     register,
     handleSubmit,
     setError,
     formState: { errors, isSubmitting },
-  } = useForm<CreateCarDto>({ resolver: zodResolver(createCarDto) });
+  } = useForm<z.input<typeof createCarDto>, unknown, CreateCarDto>({ resolver: zodResolver(createCarDto) });
 
   const onSubmit = handleSubmit(async (values) => {
     setFormError(null);
