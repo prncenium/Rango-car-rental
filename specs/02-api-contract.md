@@ -397,12 +397,10 @@ activeBookingId?, lockedDayCount
 **`PartyContact`** — what either side of a booking may see about the other
 
 ```
-id, name, phone?
+id, name
 ```
 
-**One gating rule, applied symmetrically in both directions:** `phone` is present **only** when the booking is `CONFIRMED`, `ACTIVE`, `COMPLETED`, `TERMINATED`, or `NO_SHOW`. On a `REQUESTED` or `CANCELLATION_REQUESTED`-from-`REQUESTED` booking each side sees `{ id, name }` only.
-
-The rule is symmetric because the reasoning is symmetric: a request is not yet a relationship, an admin has not yet confirmed anything, and the platform has no gateway standing between the two parties. An earlier draft gated only the owner's view of the renter (`RenterContact`) and left the renter's view of the owner as `owner: { id, name, phone? }` with no stated condition — which handed out the owner's phone number on an unconfirmed request. `PartyContact` replaces both; there is no longer a `RenterContact` type. See OQ-19.
+**Amendment 2026-09-21 — godown-mediated handover (spec 04 §4).** `PartyContact` no longer has a `phone` field at all, in any status. There is a single central godown; the renter and car owner never see each other's contact information at any point — the admin mediates the entire handover and continues to see both parties' full `UserSummary` (including phone) unconditionally via `AdminBookingDetail`. Once a booking reaches `CONFIRMED`, the renter's `BookingDetail` instead gains a `pickup: GodownInfo` block sourced from the `SystemConfig` singleton (spec 03 §11.8), not from `Car` or `User` — see spec 04 §4.2 RULE GH-2. This removes the former conditional-reveal rule entirely: there is no status under which `PartyContact` ever carries a phone number. See OQ-19 (superseded) and spec 04 §4.1 OPEN QUESTION OQ-NEW-1 for whether `name` should also be withheld.
 
 **`BookingSummary`**
 
@@ -416,12 +414,14 @@ ratePerDaySnapshot, totalAmount, amountReceived, status, createdAt
 **`BookingDetail`** — renter view
 
 ```
-BookingSummary + owner: PartyContact, rejectionReason?, cancellationReason?,
+BookingSummary + owner: PartyContact, pickup?: GodownInfo, rejectionReason?, cancellationReason?,
 terminationReason?, confirmedAt?, handedOverAt?, returnedAt?, terminatedAt?,
 odometerOut?, odometerIn?, availableActions[]
 ```
 
-**`BookingDetail`** — owner view: the same, with `renter: PartyContact` in place of `owner`.
+`pickup` is present only from `CONFIRMED` onward (spec 04 §4.2 RULE GH-2); it is the same `SystemConfig`-sourced godown address for every renter, never per-car or per-owner data.
+
+**`BookingDetail`** — owner view: the same shape minus `pickup` (the owner already knows the godown; it is not disclosed to them via this field), with `renter: PartyContact` in place of `owner`.
 
 **`AdminBookingDetail`**
 
@@ -1905,7 +1905,7 @@ Naming follows `SH-06`/`SH-07`/`SH-08` (`*Dto`, camelCase, in `/shared/src/dto/`
 | **OQ-16** | §6.3 | An admin can approve their own listing. Not closeable in code with one admin. Accept, or require a second admin? | Accepted, documented | No |
 | **OQ-17** | §7.1, E-21 | Should a renter see the `Payment` ledger for their own booking, or only `amountReceived`? | `amountReceived` only | No |
 | **OQ-18** | §7.2 | Should a public listing show any owner identity (e.g. first name)? | No owner exposure | No |
-| **OQ-19** | §7.2 | Owner sees renter's phone from `CONFIRMED` onward; on `REQUESTED`, name only. | As stated | No |
+| **OQ-19** | §7.2 | **SUPERSEDED 2026-09-21.** Was: owner sees renter's phone from `CONFIRMED` onward; on `REQUESTED`, name only. Now: no phone is ever exposed to a counterparty, in any status — see spec 04 §4 (godown-mediated handover). | Phone never disclosed to a counterparty | No |
 | **OQ-20** | §7.2 | Encrypt `KYC.documentNumber` at rest? Spec §1.2 left this open and deferred it to design; design never picked it up. | Masked in responses; **at-rest encryption unresolved** | **YES** for `KYC` |
 | **OQ-21** | E-01 | Does register auto-login (set cookies) or require an explicit login? | Explicit login | No |
 | **OQ-22** | E-01 | `409 CONFLICT {field}` on register is an account-enumeration oracle. Accept for UX, or return a generic success and rely on email verification? There is no email transport (design §13), so the generic path is not currently available. | Accept the oracle | No |

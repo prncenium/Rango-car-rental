@@ -8,6 +8,7 @@ import { PageHero } from '../../components/public/PageHero';
 import { PreFooterSection } from '../../components/public/PreFooterSection';
 import { AvailabilityCalendar } from '../../components/public/AvailabilityCalendar';
 import { EmptyState } from '../../components/public/EmptyState';
+import { RentalTermsHighlights } from '../../components/public/RentalTermsHighlights';
 import { Button } from '../../components/ui/Button';
 import { useAuthStore } from '../../store/auth.store';
 import { addMonthsIso, monthStartIso, todayIso } from '../../lib/dateUtc';
@@ -189,6 +190,12 @@ export function CarDetailPage() {
                   <dt className="text-neutral-500">Mileage</dt>
                   <dd className="text-neutral-800">{car.mileageKm.toLocaleString('en-IN')} km</dd>
                 </div>
+                <div>
+                  <dt className="text-neutral-500">Distance cap</dt>
+                  <dd className="text-neutral-800">
+                    300 km/day{car.extraKmRatePerKm ? `, then ₹${car.extraKmRatePerKm}/km` : ''}
+                  </dd>
+                </div>
                 {car.color && (
                   <div>
                     <dt className="text-neutral-500">Color</dt>
@@ -204,6 +211,8 @@ export function CarDetailPage() {
                 <p className="mt-2 whitespace-pre-line text-body-md text-neutral-700">{car.description}</p>
               </section>
             )}
+
+            <RentalTermsHighlights />
           </div>
 
           {/* Summary card */}

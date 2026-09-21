@@ -75,8 +75,15 @@ function ListingDetail() {
     enabled: Boolean(carId),
   });
 
-  function onMutationSuccess(updated: AdminCar, successText: string) {
-    queryClient.setQueryData(['admin-listing', carId], updated);
+  // Same issue as BookingDetail.tsx's onMutationSuccess: approve/reject/
+  // publish/delist/relist return the raw Car document — no `id` (only added
+  // by car.service.ts's toAdminCarDto on the *read* endpoints), no populated
+  // `owner`, no `activeBookingId`/`lockedDayCount`. Overwriting the cache
+  // with that shape crashed on `car.id.slice(-8)` below right after any
+  // action. Invalidating instead lets the detail query refetch the real
+  // AdminCar shape.
+  function onMutationSuccess(successText: string) {
+    queryClient.invalidateQueries({ queryKey: ['admin-listing', carId] });
     queryClient.invalidateQueries({ queryKey: ['admin-listings'] });
     queryClient.invalidateQueries({ queryKey: ['admin-dashboard-counts'] });
     queryClient.invalidateQueries({ queryKey: ['admin-oldest-pending-listing'] });
@@ -104,36 +111,35 @@ function ListingDetail() {
   const approveMutation = useMutation({
     mutationFn: () => approveListing(carId!),
     onMutate: () => onMutate({ moderationStatus: 'APPROVED' }),
-    onSuccess: (car) =>
-      onMutationSuccess(car, "Approved. This won't appear publicly until you also publish it."),
+    onSuccess: () => onMutationSuccess("Approved. This won't appear publicly until you also publish it."),
     onError: onMutationError,
   });
 
   const rejectMutation = useMutation({
     mutationFn: (reason: string) => rejectListing(carId!, reason),
     onMutate: () => onMutate({ moderationStatus: 'REJECTED' }),
-    onSuccess: (car) => onMutationSuccess(car, 'Listing rejected. The owner will see your reason text.'),
+    onSuccess: () => onMutationSuccess('Listing rejected. The owner will see your reason text.'),
     onError: onMutationError,
   });
 
   const publishMutation = useMutation({
     mutationFn: () => publishListing(carId!),
     onMutate: () => onMutate({ listingState: 'LISTED' }),
-    onSuccess: (car) => onMutationSuccess(car, 'Listing is now live and bookable.'),
+    onSuccess: () => onMutationSuccess('Listing is now live and bookable.'),
     onError: onMutationError,
   });
 
   const delistMutation = useMutation({
     mutationFn: (reason: string) => delistListing(carId!, reason),
     onMutate: () => onMutate({ listingState: 'DELISTED' }),
-    onSuccess: (car) => onMutationSuccess(car, 'Listing delisted.'),
+    onSuccess: () => onMutationSuccess('Listing delisted.'),
     onError: onMutationError,
   });
 
   const relistMutation = useMutation({
     mutationFn: () => relistListing(carId!),
     onMutate: () => onMutate({ listingState: 'LISTED' }),
-    onSuccess: (car) => onMutationSuccess(car, 'Listing relisted and visible again.'),
+    onSuccess: () => onMutationSuccess('Listing relisted and visible again.'),
     onError: onMutationError,
   });
 

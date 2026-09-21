@@ -105,8 +105,20 @@ function OwnerDashboard() {
         <ul className="mt-6 space-y-3">
           {listings.map((car) => {
             const statusMeta = carModerationMeta(car.moderationStatus);
+            const thumbnail = car.images[0];
             return (
-              <li key={car.id} className="rounded-lg border border-border bg-surface-card p-4">
+              <li key={car.id} className="flex gap-4 rounded-lg border border-border bg-surface-card p-4">
+                <div className="hidden h-20 w-28 shrink-0 overflow-hidden rounded-md bg-surface-sunken sm:block">
+                  {thumbnail ? (
+                    <img src={thumbnail} alt={`${car.make} ${car.model}`} className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-caption text-neutral-400">
+                      No photo
+                    </div>
+                  )}
+                </div>
+
+                <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <p className="text-body-md font-medium text-neutral-900">
@@ -149,6 +161,7 @@ function OwnerDashboard() {
                     </Link>
                   </div>
                 )}
+                </div>
               </li>
             );
           })}

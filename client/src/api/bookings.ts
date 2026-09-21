@@ -1,5 +1,5 @@
 import type { BookingStatus } from '@rango/shared';
-import { apiFetch, apiFetchWithMeta } from '../lib/apiClient';
+import { apiFetch, apiFetchBlob, apiFetchWithMeta, downloadBlob } from '../lib/apiClient';
 
 // requestBookingDto (spec 02 §10.2 E-17 / exception E4) — mirrors
 // server/src/routes/user.booking.routes.ts's requestBookingBody exactly.
@@ -9,6 +9,7 @@ export interface RequestBookingInput {
   carId: string;
   startDate: string; // YYYY-MM-DD
   endDate: string; // YYYY-MM-DD
+  agreedToTerms: true;
 }
 
 // POST /api/user/bookings (E-17) returns the created Booking document as-is
@@ -18,7 +19,7 @@ export interface RequestBookingInput {
 // fields this flow actually reads are declared here; Mongoose's default
 // toJSON also includes `_id`/`__v`/etc., which are ignored.
 export interface RequestedBooking {
-  id: string;
+  _id: string;
   car: string;
   startDate: string;
   endDate: string;
@@ -117,4 +118,12 @@ export function cancelOwnBooking(bookingId: string, reason?: string): Promise<Ow
     method: 'POST',
     body: reason ? { reason } : {},
   });
+}
+
+// GET /api/user/bookings/:bookingId/agreement — only reachable once the
+// booking has been confirmed (server-side guard); scoped to the caller's
+// own booking, 404 on someone else's.
+export async function downloadOwnBookingAgreement(bookingId: string): Promise<void> {
+  const blob = await apiFetchBlob(`/user/bookings/${bookingId}/agreement`);
+  downloadBlob(blob, `rental-agreement-${bookingId}.pdf`);
 }

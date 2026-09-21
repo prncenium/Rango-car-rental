@@ -4,8 +4,7 @@ import { LoginPage } from './pages/auth/Login';
 import { RegisterPage } from './pages/auth/Register';
 import { ResetPasswordPage } from './pages/auth/ResetPassword';
 import { HomePage } from './pages/public/Home';
-import { TeamPage, ContactPage } from './pages/public/About';
-import { VideosPage, BlogsPage } from './pages/public/Library';
+import { ContactPage } from './pages/public/About';
 import { SearchPage } from './pages/public/Search';
 import { CarDetailPage } from './pages/public/CarDetail';
 import { BookingRequestPage } from './pages/public/BookingRequest';
@@ -30,11 +29,8 @@ export function App() {
       <Routes>
       <Route path="/" element={<HomePage />} />
       <Route path="/cars" element={<SearchPage />} />
-      <Route path="/about" element={<Navigate to="/about/team" replace />} />
-      <Route path="/about/team" element={<TeamPage />} />
+      <Route path="/about" element={<Navigate to="/about/contact" replace />} />
       <Route path="/about/contact" element={<ContactPage />} />
-      <Route path="/library/videos" element={<VideosPage />} />
-      <Route path="/library/blogs" element={<BlogsPage />} />
       <Route path="/cars/:carId" element={<CarDetailPage />} />
       <Route path="/cars/:carId/request" element={<BookingRequestPage />} />
       <Route path="/login" element={<LoginPage />} />

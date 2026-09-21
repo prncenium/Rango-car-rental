@@ -15,6 +15,7 @@ function fixture(overrides: Partial<Record<string, unknown>> = {}) {
     depositSnapshot: 0,
     quotedTotalAmount: 2400,
     totalAmount: 2400,
+    termsAcceptedAt: new Date(),
     ...overrides,
   };
 }

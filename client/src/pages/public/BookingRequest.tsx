@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { getPublicAvailability, getPublicCarDetail } from '../../api/cars';
-import { requestBooking, type RequestedBooking } from '../../api/bookings';
+import { downloadOwnBookingAgreement, requestBooking, type RequestedBooking } from '../../api/bookings';
 import { getCurrentUser } from '../../api/auth.api';
 import { ApiError } from '../../lib/apiClient';
 import { PublicLayout } from './PublicLayout';
 import { AvailabilityCalendar } from '../../components/public/AvailabilityCalendar';
 import { EmptyState } from '../../components/public/EmptyState';
 import { PriceQuote } from '../../components/public/PriceQuote';
+import { TermsModal } from '../../components/public/TermsModal';
 import { Badge, Button } from '../../components/ui';
 import { useAuthStore } from '../../store/auth.store';
 import { addDaysIso, addMonthsIso, diffDays, monthStartIso, todayIso } from '../../lib/dateUtc';
@@ -63,6 +64,7 @@ export function BookingRequestPage() {
   const { carId } = useParams<{ carId: string }>();
   const navigate = useNavigate();
   const status = useAuthStore((state) => state.status);
+  const user = useAuthStore((state) => state.user);
   const setUser = useAuthStore((state) => state.setUser);
   const clear = useAuthStore((state) => state.clear);
 
@@ -70,6 +72,8 @@ export function BookingRequestPage() {
   const [selectedStart, setSelectedStart] = useState<string | undefined>(undefined);
   const [selectedEnd, setSelectedEnd] = useState<string | undefined>(undefined);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [termsOpen, setTermsOpen] = useState(false);
 
   // Resolve 'unknown' session state once, so a page refresh doesn't bounce an
   // authenticated user to /login before their session has had a chance to
@@ -107,6 +111,7 @@ export function BookingRequestPage() {
         carId: carId!,
         startDate: selectedStart!,
         endDate: addDaysIso(selectedEnd!, 1),
+        agreedToTerms: true,
       }),
     onError: (error) => {
       setSubmitError(error instanceof ApiError ? guardCopy(error) : 'Something went wrong. Please try again.');
@@ -222,7 +227,7 @@ export function BookingRequestPage() {
                   {selectedStart} → {selectedEnd} ({days} day{days === 1 ? '' : 's'})
                 </p>
                 <div className="mt-3">
-                  <PriceQuote ratePerDay={car.rentalPricePerDay} days={days} />
+                  <PriceQuote ratePerDay={car.rentalPricePerDay} days={days} extraKmRatePerKm={car.extraKmRatePerKm} />
                 </div>
               </>
             ) : (
@@ -243,7 +248,7 @@ export function BookingRequestPage() {
               variant="primary"
               size="lg"
               className="mt-4 w-full"
-              disabled={!selectedStart || !selectedEnd || !withinMaxDuration || mutation.isPending}
+              disabled={!selectedStart || !selectedEnd || !withinMaxDuration || !agreedToTerms || mutation.isPending}
               isLoading={mutation.isPending}
               onClick={() => {
                 setSubmitError(null);
@@ -255,21 +260,117 @@ export function BookingRequestPage() {
           </div>
         </div>
 
+        {/* Customer acknowledgement — same fields/wording as the printed
+            rental agreement's acknowledgement section (docs/legal/terms-and-conditions.md),
+            shown here as a review step rather than a form to type into: every
+            field that already has a value is auto-filled and read-only,
+            never re-collected from the renter (spec 04 D10-style rule — this
+            page still only ever sends carId/startDate/endDate/agreedToTerms).
+            Registration number and the three godown-signed fields aren't
+            knowable yet, exactly like the rest of this app defers disclosure
+            until there is a real booking (spec 04 §4's godown-mediated model). */}
+        {selectedStart && selectedEnd && (
+          <div className="mt-8 rounded-lg border border-border bg-surface-card p-5">
+            <h2 className="font-display text-heading-sm text-neutral-900">Customer acknowledgement</h2>
+            <p className="mt-2 text-body-sm text-neutral-600">
+              I confirm that I have read and understood the Safety Rules, Guidelines, and Terms &amp; Conditions. I
+              agree to take reasonable care of the vehicle and accept responsibility for applicable charges,
+              damages, fines, penalties, or other costs arising from my use of the vehicle, as specified in the
+              rental agreement and subject to applicable law.
+            </p>
+
+            <dl className="mt-4 grid grid-cols-1 gap-x-6 gap-y-3 text-body-sm sm:grid-cols-2">
+              <AckField label="Customer Name" value={user?.name} />
+              <AckField label="Mobile Number" value={user?.phone} />
+              <AckField label="Driving Licence No." value={user?.drivingLicence.numberMasked} mono />
+              <AckField label="Vehicle Registration No." value="Provided once your request is confirmed" muted />
+              <AckField label="Rental Start Date" value={selectedStart} />
+              <AckField label="Rental Return Date" value={selectedEnd} />
+              <AckField label="Security Deposit" value={`₹${car.depositAmount.toLocaleString('en-IN')}`} />
+              <AckField label="Customer Signature" value="Signed physically at godown handover" muted />
+              <AckField label="Rental Company Representative" value="Signed physically at godown handover" muted />
+              <AckField label="Date" value="Filled in at godown handover" muted />
+            </dl>
+
+            <label className="mt-5 flex items-start gap-2 border-t border-border pt-4 text-body-sm text-neutral-700">
+              <input
+                type="checkbox"
+                checked={agreedToTerms}
+                onChange={(e) => setAgreedToTerms(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 rounded-sm border-border-strong text-brand-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus-ring focus-visible:outline-offset-2"
+              />
+              <span>
+                I have read and agree to the above acknowledgement and the full{' '}
+                <button
+                  type="button"
+                  onClick={() => setTermsOpen(true)}
+                  className="text-brand-accent underline hover:no-underline"
+                >
+                  Terms &amp; Conditions
+                </button>
+                .
+              </span>
+            </label>
+          </div>
+        )}
+
         {/* What happens next */}
         <div className="mt-8 rounded-lg border border-border bg-surface-card p-5">
           <h2 className="font-display text-heading-sm text-neutral-900">What happens next</h2>
           <ol className="mt-3 space-y-2 text-body-sm text-neutral-600">
             <li>1. The owner and an admin review your request.</li>
-            <li>2. If confirmed, contact details appear here and you'll see the status update.</li>
-            <li>3. You meet in person, inspect the car, and pay directly — no online payment.</li>
+            <li>2. If confirmed, you'll see our godown pickup location and instructions here.</li>
+            <li>3. You collect the car at the godown, inspect it, and pay directly — no online payment.</li>
           </ol>
         </div>
       </div>
+
+      <TermsModal open={termsOpen} onClose={() => setTermsOpen(false)} />
     </PublicLayout>
   );
 }
 
+function AckField({
+  label,
+  value,
+  mono,
+  muted,
+}: {
+  label: string;
+  value: string | undefined;
+  mono?: boolean;
+  muted?: boolean;
+}) {
+  return (
+    <div>
+      <dt className="text-caption uppercase tracking-wide text-neutral-500">{label}</dt>
+      <dd
+        className={
+          muted
+            ? 'text-body-sm italic text-neutral-400'
+            : mono
+              ? 'font-mono text-mono-sm text-neutral-800'
+              : 'text-body-sm text-neutral-800'
+        }
+      >
+        {value ?? '—'}
+      </dd>
+    </div>
+  );
+}
+
 function SuccessPanel({ booking, carLabel }: { booking: RequestedBooking; carLabel: string }) {
+  const [downloading, setDownloading] = useState(false);
+
+  async function handleDownload() {
+    setDownloading(true);
+    try {
+      await downloadOwnBookingAgreement(booking._id);
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   return (
     <div className="mx-auto max-w-2xl px-4 py-16 sm:px-6 lg:px-8">
       <div className="rounded-lg border border-border bg-surface-card p-8 text-center">
@@ -286,9 +387,20 @@ function SuccessPanel({ booking, carLabel }: { booking: RequestedBooking; carLab
           Estimated total: ₹{booking.totalAmount.toLocaleString('en-IN')} for {booking.days} day
           {booking.days === 1 ? '' : 's'}
         </p>
-        <Link to="/cars" className="mt-6 inline-block">
-          <Button variant="secondary">Browse more cars</Button>
-        </Link>
+
+        {/* Available immediately — all the fields it needs (profile, car,
+            dates, deposit, the acknowledgement just agreed to) already exist
+            at REQUESTED; only the signature/rep/date lines stay blank until
+            godown handover. */}
+        <Button variant="secondary" className="mt-6" isLoading={downloading} onClick={handleDownload}>
+          Download Rental Agreement (PDF)
+        </Button>
+
+        <div>
+          <Link to="/cars" className="mt-4 inline-block">
+            <Button variant="ghost">Browse more cars</Button>
+          </Link>
+        </div>
       </div>
     </div>
   );

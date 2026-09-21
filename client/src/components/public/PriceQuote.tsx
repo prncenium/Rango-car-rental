@@ -1,3 +1,5 @@
+import { DAILY_DISTANCE_CAP_KM } from '@rango/shared';
+
 /**
  * Renders a rental price preview — days × rentalPricePerDay.
  *
@@ -15,14 +17,16 @@
 export interface PriceQuoteProps {
   ratePerDay: number;
   days: number;
+  extraKmRatePerKm?: number;
 }
 
 export function computeQuoteTotal(ratePerDay: number, days: number): number {
   return ratePerDay * days;
 }
 
-export function PriceQuote({ ratePerDay, days }: PriceQuoteProps) {
+export function PriceQuote({ ratePerDay, days, extraKmRatePerKm }: PriceQuoteProps) {
   const total = computeQuoteTotal(ratePerDay, days);
+  const allowedKm = days * DAILY_DISTANCE_CAP_KM;
 
   return (
     <div className="flex flex-col gap-1.5 text-body-sm">
@@ -38,6 +42,10 @@ export function PriceQuote({ ratePerDay, days }: PriceQuoteProps) {
       </div>
       <p className="text-caption text-neutral-500">
         This is an estimate, not a charge. The confirmed total is set when an admin reviews your request.
+      </p>
+      <p className="text-caption text-neutral-500">
+        Includes {allowedKm.toLocaleString('en-IN')} km ({DAILY_DISTANCE_CAP_KM} km/day).
+        {extraKmRatePerKm ? ` Extra distance is billed at ₹${extraKmRatePerKm}/km.` : ''}
       </p>
     </div>
   );

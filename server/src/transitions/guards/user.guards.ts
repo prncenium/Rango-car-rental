@@ -50,13 +50,17 @@ export const guardNotLastSuperAdmin: Guard<UserE> = {
 // (409 INVALID_TRANSITION, checked before any guard) from an actual guard
 // failure (409 GUARD_FAILED) — see each guard's call site.
 
-// spec 03 §2.6 — E-59/E-60/E-66 must carry a privilege-ordering guard no
+// spec 03 §2.6/§11.6 — E-59/E-60/E-66 must carry a privilege-ordering guard no
 // existing spec had. Without it, any ADMIN could deactivate/reactivate (or
 // password-reset) a SUPER_ADMIN, since requireRole([ADMIN, SUPER_ADMIN])
 // alone treats both tiers as equal at the route layer. Rank order:
-// SUPER_ADMIN > ADMIN > USER. An actor may only act on a target of strictly
-// lower rank; SUPER_ADMIN acting on SUPER_ADMIN is also refused here (use
-// guardNotSelf/the demote flow for that path instead of deactivate/reactivate).
+// SUPER_ADMIN > ADMIN > USER. §11.6's resolved rule is `rank[actor] >=
+// rank[target]` to ALLOW — i.e. refuse only when the target outranks the
+// actor (rank[target] > rank[actor]). Peer action (one ADMIN acting on
+// another, one SUPER_ADMIN acting on another) is deliberately allowed — it
+// is the recovery path for a compromised peer account — and it is
+// guardNotSelf plus the last-admin/last-super-admin guards that keep it from
+// becoming self-destruction, not this guard (§11.6, OQ-A27's stated default).
 const ROLE_RANK: Record<'USER' | 'ADMIN' | 'SUPER_ADMIN', number> = {
   USER: 0,
   ADMIN: 1,
@@ -68,8 +72,8 @@ export const guardNotHigherPrivilege: Guard<UserE> = {
   check: (entity, actor) => {
     const actorRank = ROLE_RANK[actor.role as keyof typeof ROLE_RANK] ?? 0;
     const targetRank = ROLE_RANK[entity.role as keyof typeof ROLE_RANK] ?? 0;
-    if (targetRank >= actorRank) {
-      return { ok: false, details: { reason: 'TARGET_NOT_LOWER_PRIVILEGE', actorRole: actor.role, targetRole: entity.role } };
+    if (targetRank > actorRank) {
+      return { ok: false, details: { reason: 'TARGET_HIGHER_PRIVILEGE', actorRole: actor.role, targetRole: entity.role } };
     }
     return { ok: true };
   },

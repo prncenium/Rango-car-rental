@@ -1,4 +1,5 @@
 export * from './lib/objectId.js';
+export * from './lib/pricing.js';
 
 export * from './enums/role.enum.js';
 export * from './enums/carModerationStatus.enum.js';
@@ -29,3 +30,4 @@ export * from './entities/systemConfig.entity.js';
 
 export * from './dto/auth.js';
 export * from './dto/car.js';
+export * from './dto/contact.js';

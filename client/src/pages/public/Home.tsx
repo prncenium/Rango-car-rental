@@ -77,7 +77,18 @@ export function HomePage() {
           {isLoading &&
             Array.from({ length: 8 }).map((_, i) => <CarCardSkeleton key={i} />)}
 
-          {!isLoading && !isError && cars.map((car) => <CarCard key={car.id} car={car} />)}
+          {!isLoading &&
+            !isError &&
+            cars.map((car, index) => (
+              // Mobile shows only the first 5, then the "View all cars"
+              // button below takes over — desktop/tablet (sm+) still shows
+              // every fetched car, unaffected. `hidden sm:block` (rather than
+              // slicing the array) keeps this purely a mobile-viewport
+              // concern with no change to what's fetched or how sm+ renders.
+              <div key={car.id} className={index >= 5 ? 'hidden sm:block' : undefined}>
+                <CarCard car={car} />
+              </div>
+            ))}
         </div>
 
         {!isLoading && !isError && cars.length === 0 && (
@@ -110,7 +121,26 @@ export function HomePage() {
         imageAlt="A car from the Rango fleet, ready to be rented"
         eyebrow="Rango"
         heading="Rent cars."
-        body="No middleman apps, no hidden fees — just a real car, a real person, and the keys in your hand."
+        body="No middleman apps, no hidden fees — just a real car, a real person, and the keys in your hand. Every listing is admin-approved before it goes live, and every handover happens in person at our godown."
+        actions={
+          <>
+            <Button variant="primary" size="lg" onClick={() => navigate('/cars')}>
+              <SearchIcon className="h-4 w-4" />
+              Browse available cars
+            </Button>
+            <Link
+              to={isAuthenticated ? '/account/listings/new' : '/register'}
+              className="inline-flex h-12 items-center justify-center rounded-sm border border-neutral-0/30 px-6 text-body-md text-neutral-0 transition-colors hover:bg-neutral-0/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus-ring focus-visible:outline-offset-2"
+            >
+              List your car
+            </Link>
+          </>
+        }
+        stats={[
+          { value: 'Admin-approved', label: 'Every listing reviewed before it goes live' },
+          { value: 'No online payment', label: 'Pay directly, in person, at handover' },
+          { value: '24–48 hrs', label: 'Typical time to hear back on a request' },
+        ]}
       />
 
       <HowItWorksSection />

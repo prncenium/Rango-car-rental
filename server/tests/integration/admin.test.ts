@@ -96,6 +96,7 @@ async function makeBooking(
     depositSnapshot: 0,
     quotedTotalAmount: 3000,
     totalAmount: 3000,
+    termsAcceptedAt: new Date(),
     status: 'REQUESTED',
     ...overrides,
   });
@@ -338,6 +339,7 @@ describe('Admin endpoints (CAR/BOOK/PAY/ADM)', () => {
         depositSnapshot: 0,
         quotedTotalAmount: 3000,
         totalAmount: 3000,
+        termsAcceptedAt: new Date(),
         status: 'CONFIRMED',
       });
 
@@ -428,12 +430,18 @@ describe('Admin endpoints (CAR/BOOK/PAY/ADM)', () => {
         .set('Cookie', [`rgo_at=${adminToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN);
       expect(list.status).toBe(200);
       expect(list.body.data.some((c: { _id: string }) => c._id === String(draft._id))).toBe(true);
+      // Regression guard: client/src/api/admin.ts's AdminCar type expects an
+      // `id` field (not just `_id`) — without it, every admin listings/
+      // calendar link resolves to `/admin/listings/undefined`.
+      expect(list.body.data.every((c: { id: string; _id: string }) => c.id === c._id)).toBe(true);
 
       const detail = await request(app)
         .get(`/api/admin/listings/${draft._id}`)
         .set('Cookie', [`rgo_at=${adminToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN);
       expect(detail.status).toBe(200);
+      expect(detail.body.data.id).toBe(String(draft._id));
       expect(detail.body.data.owner.email).toBe(owner.email);
+      expect(detail.body.data.owner.id).toBe(String(owner._id));
       expect(detail.body.data).toHaveProperty('lockedDayCount');
       expect(detail.body.data.activeBookingId).toBeNull();
 
@@ -551,6 +559,306 @@ describe('Admin endpoints (CAR/BOOK/PAY/ADM)', () => {
         .set('Cookie', [`rgo_at=${adminToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN);
       expect(dashboard.status).toBe(200);
       expect(dashboard.body.data.queues).toBeDefined();
+    });
+
+    // ADM-02 — the dashboard is a live read, not a cache: it must report
+    // exactly the counts implied by what's actually in the DB right now,
+    // both before and after a mutation changes the underlying set.
+    it('reports counts that exactly match the seeded/underlying data, and updates after a mutation', async () => {
+      const { token: adminToken } = await makeUser('ADMIN');
+      const { user: owner } = await makeUser('USER');
+      const { user: renter } = await makeUser('USER');
+
+      await makeCar(String(owner._id), { moderationStatus: 'PENDING_APPROVAL' });
+      await makeCar(String(owner._id), { moderationStatus: 'PENDING_APPROVAL' });
+      await makeCar(String(owner._id), { moderationStatus: 'APPROVED', listingState: 'LISTED' });
+
+      const carForBooking = await makeCar(String(owner._id), { moderationStatus: 'APPROVED', listingState: 'LISTED' });
+      const requested1 = await makeBooking(String(carForBooking._id), String(renter._id), String(owner._id));
+      await makeBooking(String(carForBooking._id), String(renter._id), String(owner._id), {
+        startDate: new Date(Date.now() + 20 * 86_400_000),
+        endDate: new Date(Date.now() + 23 * 86_400_000),
+      });
+
+      const before = await request(app)
+        .get('/api/admin/dashboard/counts')
+        .set('Cookie', [`rgo_at=${adminToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN);
+      expect(before.status).toBe(200);
+      expect(before.body.data.queues.listingsPending).toBe(2);
+      expect(before.body.data.queues.bookingsRequested).toBe(2);
+
+      // Confirming one REQUESTED booking must move it out of the count.
+      await request(app)
+        .post(`/api/admin/bookings/${requested1._id}/confirm`)
+        .set('Cookie', [`rgo_at=${adminToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN);
+
+      const after = await request(app)
+        .get('/api/admin/dashboard/counts')
+        .set('Cookie', [`rgo_at=${adminToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN);
+      expect(after.status).toBe(200);
+      expect(after.body.data.queues.bookingsRequested).toBe(1);
+      expect(after.body.data.queues.listingsPending).toBe(2); // unaffected by the booking mutation
+    });
+  });
+
+  // ADM-06 — the privilege-ordering guard the 2026-09-16 backend audit
+  // flagged as HIGH: without it, any ADMIN could deactivate/reactivate a
+  // SUPER_ADMIN account (targetRank >= actorRank must be refused).
+  describe('Privilege-ordering guard (ADM-06)', () => {
+    it('blocks an ADMIN from deactivating or reactivating a SUPER_ADMIN', async () => {
+      const { token: adminToken } = await makeUser('ADMIN');
+      const { user: superAdmin } = await makeUser('SUPER_ADMIN');
+
+      const deactivate = await request(app)
+        .post(`/api/admin/users/${superAdmin._id}/deactivate`)
+        .set('Cookie', [`rgo_at=${adminToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
+        .send({ reason: 'attempted privilege escalation' });
+      expect(deactivate.status).toBe(409);
+      expect(deactivate.body.error.details.guard).toBe('guardNotHigherPrivilege');
+
+      // Confirm it's still active — the failed attempt must not have partially applied.
+      expect((await User.findById(superAdmin._id))!.isActive).toBe(true);
+    });
+
+    it('blocks an ADMIN from reactivating a suspended SUPER_ADMIN, but a SUPER_ADMIN may act on an ADMIN', async () => {
+      const { token: superAdminToken } = await makeUser('SUPER_ADMIN');
+      const { user: targetSuperAdmin } = await makeUser('SUPER_ADMIN');
+      const { token: adminToken } = await makeUser('ADMIN');
+
+      const suspend = await request(app)
+        .post(`/api/admin/users/${targetSuperAdmin._id}/deactivate`)
+        .set('Cookie', [`rgo_at=${superAdminToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
+        .send({ reason: 'compromised peer account' });
+      expect(suspend.status).toBe(200);
+
+      const reactivateByAdmin = await request(app)
+        .post(`/api/admin/users/${targetSuperAdmin._id}/reactivate`)
+        .set('Cookie', [`rgo_at=${adminToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN);
+      expect(reactivateByAdmin.status).toBe(409);
+      expect(reactivateByAdmin.body.error.details.guard).toBe('guardNotHigherPrivilege');
+
+      // Peer action (SUPER_ADMIN acting on ADMIN) must still be allowed.
+      const { user: targetAdmin } = await makeUser('ADMIN');
+      const deactivateAdmin = await request(app)
+        .post(`/api/admin/users/${targetAdmin._id}/deactivate`)
+        .set('Cookie', [`rgo_at=${superAdminToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
+        .send({ reason: 'peer moderation' });
+      expect(deactivateAdmin.status).toBe(200);
+      expect(deactivateAdmin.body.data.isActive).toBe(false);
+    });
+  });
+
+  describe('Booking terminate and no-show clearance', () => {
+    it('terminates an ACTIVE booking early, releasing future locks, with an audit row', async () => {
+      const { token: adminToken } = await makeUser('ADMIN');
+      const { user: owner } = await makeUser('USER');
+      const { user: renter } = await makeUser('USER');
+      const car = await makeCar(String(owner._id), { moderationStatus: 'APPROVED', listingState: 'LISTED' });
+      const startDate = new Date();
+      startDate.setUTCHours(0, 0, 0, 0);
+      const endDate = new Date(startDate);
+      endDate.setUTCDate(endDate.getUTCDate() + 5);
+      const booking = await makeBooking(String(car._id), String(renter._id), String(owner._id), {
+        startDate,
+        endDate,
+        days: 5,
+        totalAmount: 5000,
+        quotedTotalAmount: 5000,
+      });
+
+      await request(app).post(`/api/admin/bookings/${booking._id}/confirm`).set('Cookie', [`rgo_at=${adminToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN);
+      await request(app)
+        .post(`/api/admin/bookings/${booking._id}/mark-active`)
+        .set('Cookie', [`rgo_at=${adminToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
+        .send({ overrideReason: 'trusted renter' });
+
+      const missingReason = await request(app)
+        .post(`/api/admin/bookings/${booking._id}/terminate`)
+        .set('Cookie', [`rgo_at=${adminToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
+        .send({});
+      expect(missingReason.status).toBe(400);
+
+      const terminated = await request(app)
+        .post(`/api/admin/bookings/${booking._id}/terminate`)
+        .set('Cookie', [`rgo_at=${adminToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
+        .send({ reason: 'car needed back early' });
+      expect(terminated.status).toBe(200);
+      expect(terminated.body.data.status).toBe('TERMINATED');
+
+      const log = await AuditLog.findOne({ entityType: 'BOOKING', entityId: booking._id, action: 'BOOKING_TERMINATED' });
+      expect(log).not.toBeNull();
+      expect(log!.reason).toBe('car needed back early');
+      expect(await BookingDayLock.countDocuments({ booking: booking._id })).toBe(0);
+    });
+
+    it('clears a NO_SHOW flag without changing Booking.status, with an audit row', async () => {
+      const { token: adminToken } = await makeUser('ADMIN');
+      const { user: owner } = await makeUser('USER');
+      const { user: renter } = await makeUser('USER');
+      const car = await makeCar(String(owner._id), { moderationStatus: 'APPROVED', listingState: 'LISTED' });
+      const pastStart = new Date();
+      pastStart.setUTCDate(pastStart.getUTCDate() - 2);
+      const pastEnd = new Date();
+      pastEnd.setUTCDate(pastEnd.getUTCDate() + 1);
+      const booking = await Booking.create({
+        car: car._id,
+        renter: renter._id,
+        owner: owner._id,
+        startDate: pastStart,
+        endDate: pastEnd,
+        days: 3,
+        ratePerDaySnapshot: 1000,
+        depositSnapshot: 0,
+        quotedTotalAmount: 3000,
+        totalAmount: 3000,
+        termsAcceptedAt: new Date(),
+        status: 'NO_SHOW',
+        noShowCleared: false,
+        noShowAt: new Date(),
+      });
+
+      const missingReason = await request(app)
+        .post(`/api/admin/bookings/${booking._id}/clear-no-show`)
+        .set('Cookie', [`rgo_at=${adminToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
+        .send({});
+      expect(missingReason.status).toBe(400);
+
+      const cleared = await request(app)
+        .post(`/api/admin/bookings/${booking._id}/clear-no-show`)
+        .set('Cookie', [`rgo_at=${adminToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
+        .send({ reason: 'renter provided a valid excuse' });
+      expect(cleared.status).toBe(200);
+      expect(cleared.body.data.status).toBe('NO_SHOW');
+      expect(cleared.body.data.noShowCleared).toBe(true);
+
+      const log = await AuditLog.findOne({ entityType: 'BOOKING', entityId: booking._id, action: 'BOOKING_NO_SHOW_CLEARED' });
+      expect(log).not.toBeNull();
+    });
+  });
+
+  describe('Availability blocks (admin holds a car off the calendar)', () => {
+    it('creates and deletes an ADMIN_BLOCK day-lock range, auth/role gated, with audit rows', async () => {
+      const { token: adminToken } = await makeUser('ADMIN');
+      const { token: userToken } = await makeUser('USER');
+      const { user: owner } = await makeUser('USER');
+      const car = await makeCar(String(owner._id), { moderationStatus: 'APPROVED', listingState: 'LISTED' });
+
+      const from = new Date();
+      from.setUTCDate(from.getUTCDate() + 10);
+      const to = new Date(from);
+      to.setUTCDate(to.getUTCDate() + 3);
+      const fmt = (d: Date) => d.toISOString().slice(0, 10);
+
+      const forbidden = await request(app)
+        .post(`/api/admin/listings/${car._id}/availability-blocks`)
+        .set('Cookie', [`rgo_at=${userToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
+        .send({ from: fmt(from), to: fmt(to), reason: 'maintenance' });
+      expect(forbidden.status).toBe(403);
+
+      const created = await request(app)
+        .post(`/api/admin/listings/${car._id}/availability-blocks`)
+        .set('Cookie', [`rgo_at=${adminToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
+        .send({ from: fmt(from), to: fmt(to), reason: 'scheduled maintenance' });
+      expect(created.status).toBe(201);
+
+      const lockCount = await BookingDayLock.countDocuments({ car: car._id, source: 'ADMIN_BLOCK' });
+      expect(lockCount).toBeGreaterThan(0);
+
+      const blockId: string = created.body.data.blockId;
+      const deleted = await request(app)
+        .delete(`/api/admin/listings/${car._id}/availability-blocks/${blockId}`)
+        .set('Cookie', [`rgo_at=${adminToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN);
+      expect(deleted.status).toBe(204);
+
+      expect(await BookingDayLock.countDocuments({ car: car._id, source: 'ADMIN_BLOCK' })).toBe(0);
+    });
+  });
+
+  describe('Payment settle/void/refund (PAY-06..09), direct endpoints', () => {
+    it('records a PENDING payment, settles it, and audits both writes', async () => {
+      const { token: adminToken } = await makeUser('ADMIN');
+      const { user: owner } = await makeUser('USER');
+      const { user: renter } = await makeUser('USER');
+      const car = await makeCar(String(owner._id), { moderationStatus: 'APPROVED', listingState: 'LISTED' });
+      const booking = await makeBooking(String(car._id), String(renter._id), String(owner._id));
+      await request(app).post(`/api/admin/bookings/${booking._id}/confirm`).set('Cookie', [`rgo_at=${adminToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN);
+
+      const recorded = await request(app)
+        .post('/api/admin/payments/record')
+        .set('Cookie', [`rgo_at=${adminToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
+        .send({ bookingId: String(booking._id), amount: 3000, paymentMethod: 'CASH', purpose: 'RENTAL' });
+      expect(recorded.status).toBe(201);
+      expect(recorded.body.data.status).toBe('PENDING');
+      const paymentId: string = recorded.body.data._id;
+
+      const settled = await request(app)
+        .post(`/api/admin/payments/${paymentId}/settle`)
+        .set('Cookie', [`rgo_at=${adminToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN);
+      expect(settled.status).toBe(200);
+      expect(settled.body.data.payment.status).toBe('SETTLED');
+      expect(settled.body.data.booking.amountReceived).toBe(3000);
+
+      const log = await AuditLog.findOne({ entityType: 'PAYMENT', entityId: paymentId, action: 'PAYMENT_SETTLED' });
+      expect(log).not.toBeNull();
+    });
+
+    it('voids a PENDING payment with a reason, and refunds a SETTLED payment', async () => {
+      const { token: adminToken } = await makeUser('ADMIN');
+      const { user: owner } = await makeUser('USER');
+      const { user: renter } = await makeUser('USER');
+      const car = await makeCar(String(owner._id), { moderationStatus: 'APPROVED', listingState: 'LISTED' });
+      const booking = await makeBooking(String(car._id), String(renter._id), String(owner._id));
+      await request(app).post(`/api/admin/bookings/${booking._id}/confirm`).set('Cookie', [`rgo_at=${adminToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN);
+
+      const recorded = await request(app)
+        .post('/api/admin/payments/record')
+        .set('Cookie', [`rgo_at=${adminToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
+        .send({ bookingId: String(booking._id), amount: 1000, paymentMethod: 'CASH', purpose: 'RENTAL' });
+      const pendingId: string = recorded.body.data._id;
+
+      const voidMissingReason = await request(app)
+        .post(`/api/admin/payments/${pendingId}/void`)
+        .set('Cookie', [`rgo_at=${adminToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
+        .send({});
+      expect(voidMissingReason.status).toBe(400);
+
+      const voided = await request(app)
+        .post(`/api/admin/payments/${pendingId}/void`)
+        .set('Cookie', [`rgo_at=${adminToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
+        .send({ reason: 'recorded in error' });
+      expect(voided.status).toBe(200);
+      expect(voided.body.data.status).toBe('VOID');
+
+      const voidLog = await AuditLog.findOne({ entityType: 'PAYMENT', entityId: pendingId, action: 'PAYMENT_VOIDED' });
+      expect(voidLog).not.toBeNull();
+
+      const settledRecorded = await request(app)
+        .post('/api/admin/payments/record')
+        .set('Cookie', [`rgo_at=${adminToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
+        .send({ bookingId: String(booking._id), amount: 2000, paymentMethod: 'CASH', purpose: 'RENTAL' });
+      const settledId: string = settledRecorded.body.data._id;
+      await request(app)
+        .post(`/api/admin/payments/${settledId}/settle`)
+        .set('Cookie', [`rgo_at=${adminToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN);
+
+      const refunded = await request(app)
+        .post(`/api/admin/payments/${settledId}/refund`)
+        .set('Cookie', [`rgo_at=${adminToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
+        .send({ amount: 500, reason: 'partial refund requested' });
+      expect(refunded.status).toBe(201);
+      expect(refunded.body.data.payment.direction).toBe('OUT');
+      expect(refunded.body.data.payment.refundOf).toBe(settledId);
+      expect(refunded.body.data.booking.amountReceived).toBe(1500); // 2000 settled - 500 refunded
+
+      // The audit row is attached to the new refund (OUT) payment, not the original.
+      const refundPaymentId: string = refunded.body.data.payment._id;
+      const refundLog = await AuditLog.findOne({
+        entityType: 'PAYMENT',
+        entityId: refundPaymentId,
+        action: 'PAYMENT_REFUNDED',
+      });
+      expect(refundLog).not.toBeNull();
+      expect(refundLog!.metadata?.refundOf).toBe(settledId);
     });
   });
 });

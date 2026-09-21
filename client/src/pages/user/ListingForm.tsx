@@ -43,6 +43,7 @@ const CREATE_FIELDS = [
   'rentalPricePerDay',
   'rentalPricePerWeek',
   'depositAmount',
+  'extraKmRatePerKm',
 ] as const;
 
 export function CreateListingPage() {
@@ -168,6 +169,7 @@ function EditListingForm() {
       rentalPricePerDay: car.rentalPricePerDay,
       rentalPricePerWeek: car.rentalPricePerWeek,
       depositAmount: car.depositAmount,
+      extraKmRatePerKm: car.extraKmRatePerKm,
     });
   }, [car, reset]);
 
@@ -190,6 +192,7 @@ function EditListingForm() {
         rentalPricePerDay: updated.rentalPricePerDay,
         rentalPricePerWeek: updated.rentalPricePerWeek,
         depositAmount: updated.depositAmount,
+        extraKmRatePerKm: updated.extraKmRatePerKm,
       });
     },
   });
@@ -488,6 +491,13 @@ function PricingFields({ register, errors }: FieldGroupProps) {
           helperText="Optional."
           errorText={errors.depositAmount?.message}
           {...register('depositAmount', { valueAsNumber: true, setValueAs: (v) => (v === '' || Number.isNaN(v) ? undefined : v) })}
+        />
+        <Input
+          label="Extra km rate (₹/km)"
+          type="number"
+          helperText="Charged for distance driven beyond 300km/day of the rental. Optional."
+          errorText={errors.extraKmRatePerKm?.message}
+          {...register('extraKmRatePerKm', { valueAsNumber: true, setValueAs: (v) => (v === '' || Number.isNaN(v) ? undefined : v) })}
         />
       </div>
     </section>

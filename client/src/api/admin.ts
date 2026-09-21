@@ -8,7 +8,7 @@ import type {
   PaymentPurpose,
   Role,
 } from '@rango/shared';
-import { apiFetch, apiFetchWithMeta } from '../lib/apiClient';
+import { apiFetch, apiFetchBlob, apiFetchWithMeta, downloadBlob } from '../lib/apiClient';
 import type { ListMeta } from './bookings';
 
 // GET /api/admin/dashboard/counts (E-62) — matches
@@ -64,6 +64,7 @@ export interface AdminCar {
   rentalPricePerDay: number;
   rentalPricePerWeek?: number;
   depositAmount?: number;
+  extraKmRatePerKm?: number;
   moderationStatus: CarModerationStatus;
   listingState: CarListingState;
   approvedAt?: string;
@@ -148,10 +149,15 @@ export function relistListing(carId: string): Promise<AdminCar> {
 // Straight off `AuditLog.find(...).populate('actor', ...).lean()` with no
 // `_id`->`id` mapping layer (server/src/services/audit.service.ts) — same
 // "carries Mongo's `_id` verbatim" shape as AdminBookingListItem below, not
-// the mapped `AdminCar` shape.
+// the mapped `AdminCar` shape. `actor` is `null` whenever the User a row's
+// `actor` ObjectId once pointed at no longer exists — Mongoose's populate
+// returns null for a dangling ref rather than omitting the field. Nothing in
+// this app hard-deletes a User today, but the DB itself doesn't forbid it
+// (e.g. a one-off cleanup script), so a stale audit row referencing a since
+// -deleted actor is a real, reachable case, not a hypothetical one.
 export interface AuditLogEntry {
   _id: string;
-  actor: { _id: string; name: string; email: string; role: string } | string;
+  actor: { _id: string; name: string; email: string; role: string } | string | null;
   actorRole: string;
   action: string;
   entityType: string;
@@ -162,6 +168,21 @@ export interface AuditLogEntry {
   metadata?: Record<string, unknown>;
   ipAddress?: string;
   createdAt: string;
+}
+
+// Shared by AuditLog.tsx and Dashboard.tsx's "today's activity" feed — one
+// place to resolve the actor display string so `null` (deleted actor) is
+// never a call site's problem to remember to check.
+export function auditActorLabel(actor: AuditLogEntry['actor']): string {
+  if (actor === null) return 'Deleted account';
+  return typeof actor === 'string' ? actor : actor.name;
+}
+
+// Same null-safety as auditActorLabel, but with the email too — for the
+// audit detail modal's fuller "Who" line.
+export function auditActorDetailLabel(actor: AuditLogEntry['actor']): string {
+  if (actor === null) return 'Deleted account';
+  return typeof actor === 'string' ? actor : `${actor.name} (${actor.email})`;
 }
 
 // entityId requires entityType server-side (guardEntityIdRequiresEntityType
@@ -209,6 +230,7 @@ export interface AdminBookingCarSummary {
   model: string;
   registrationNumber: string;
   location?: { city: string; state: string };
+  extraKmRatePerKm?: number;
 }
 
 export interface AdminBookingListItem {
@@ -231,6 +253,8 @@ export interface AdminBookingListItem {
   noShowReason?: string;
   noShowCleared: boolean;
   createdAt: string;
+  excessKm?: number;
+  excessKmChargeAmount?: number;
 }
 
 export interface AdminPaymentRecord {
@@ -278,6 +302,14 @@ export function adminListBookings(
 
 export function adminGetBooking(bookingId: string): Promise<AdminBookingDetail> {
   return apiFetch<AdminBookingDetail>(`/admin/bookings/${bookingId}`);
+}
+
+// GET /api/admin/bookings/:bookingId/agreement — any booking, no ownership
+// scope (admin-side), same 409 GUARD_FAILED as the renter side if it hasn't
+// been confirmed yet.
+export async function downloadBookingAgreement(bookingId: string): Promise<void> {
+  const blob = await apiFetchBlob(`/admin/bookings/${bookingId}/agreement`);
+  downloadBlob(blob, `rental-agreement-${bookingId}.pdf`);
 }
 
 // POST /api/admin/bookings/:bookingId/confirm — no body accepted server-side

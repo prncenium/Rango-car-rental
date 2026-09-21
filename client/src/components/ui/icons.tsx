@@ -272,6 +272,46 @@ export function TrashIcon(props: IconProps) {
   );
 }
 
+export function EmailIcon(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <rect x="2.5" y="4.5" width="15" height="11" rx="1.4" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M3.2 5.5L10 11l6.8-5.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function PhoneIcon(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <path
+        d="M5.3 3.5h2.1l1 3.3-1.6 1.3a9 9 0 004.1 4.1l1.3-1.6 3.3 1v2.1a1.4 1.4 0 01-1.5 1.4A12.6 12.6 0 013.9 5a1.4 1.4 0 011.4-1.5z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function GlobeIcon(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M3 10h14M10 3c2 2 3 4.5 3 7s-1 5-3 7c-2-2-3-4.5-3-7s1-5 3-7z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function SendIcon(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M17 3L2.5 9.2l5.2 2 2 5.3L17 3z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+      <path d="M9.8 12.6L17 3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export function BadgePercentIcon(props: IconProps) {
   return (
     <svg {...base} {...props}>

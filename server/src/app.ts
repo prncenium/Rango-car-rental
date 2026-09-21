@@ -6,7 +6,7 @@ import { errorHandler } from './middleware/errorHandler.js';
 import { requestContext } from './middleware/requestContext.js';
 import { requireActiveSession, requireAdmin, requireAuth, requireSuperAdmin } from './middleware/auth.js';
 import { requireCsrf } from './middleware/csrf.js';
-import { adminRateLimit, authRateLimit, publicRateLimit, userRateLimit } from './middleware/rateLimit.js';
+import { adminRateLimit, authRateLimit, contactRateLimit, publicRateLimit, userRateLimit } from './middleware/rateLimit.js';
 import { authRoutes } from './routes/auth.routes.js';
 import { adminCarRoutes } from './routes/admin.car.routes.js';
 import { adminBookingRoutes } from './routes/admin.booking.routes.js';
@@ -18,6 +18,8 @@ import { userListingRoutes } from './routes/user.listing.routes.js';
 import { userBookingRoutes } from './routes/user.booking.routes.js';
 import { userProfileRoutes } from './routes/user.profile.routes.js';
 import { publicCarRoutes } from './routes/public.car.routes.js';
+import { publicLegalRoutes } from './routes/public.legal.routes.js';
+import { publicContactRoutes } from './routes/public.contact.routes.js';
 import { superAdminRoutes } from './routes/superadmin.routes.js';
 
 // No `listen` here (design §3) so Supertest can import this directly
@@ -39,6 +41,8 @@ export function createApp(): Express {
   // spec 02 §9). No auth middleware — this is the one namespace with none.
   // spec 02 §5 — relaxed bucket: unauthenticated, IP-keyed, high ceiling.
   app.use('/api/public/cars', publicRateLimit, publicCarRoutes);
+  app.use('/api/public/legal', publicRateLimit, publicLegalRoutes);
+  app.use('/api/public/contact', contactRateLimit, publicContactRoutes);
 
   // /api/auth: register, login, refresh, logout, me. Mounted ahead of
   // /api/user and /api/admin (AUTH-09) — none of its own routes carry

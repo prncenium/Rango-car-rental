@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Link, NavLink } from 'react-router-dom';
+import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { Button } from '../ui/Button';
 import { Avatar } from '../ui/Avatar';
 import { MenuIcon, XIcon } from '../ui/icons';
 import { cn } from '../ui/cn';
-import { getCurrentUser } from '../../api/auth.api';
+import { getCurrentUser, logout } from '../../api/auth.api';
 import { useAuthStore } from '../../store/auth.store';
 
 /**
@@ -15,6 +15,7 @@ import { useAuthStore } from '../../store/auth.store';
  */
 export function PublicHeader() {
   const [open, setOpen] = useState(false);
+  const navigate = useNavigate();
   const status = useAuthStore((state) => state.status);
   const user = useAuthStore((state) => state.user);
   const setUser = useAuthStore((state) => state.setUser);
@@ -27,7 +28,19 @@ export function PublicHeader() {
       .catch(() => clear());
   }, [status, setUser, clear]);
 
+  async function handleLogout() {
+    try {
+      await logout();
+    } finally {
+      clear();
+      navigate('/login', { replace: true });
+    }
+  }
+
   const isAuthenticated = status === 'authenticated' && user;
+  // Admin-only nav entry — spec 03 §1.5: role is checked as ADMIN|SUPER_ADMIN,
+  // never `=== 'ADMIN'` alone, since SUPER_ADMIN is a strict superset.
+  const isAdmin = isAuthenticated && (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN');
 
   const navLinkClass = ({ isActive }: { isActive: boolean }) =>
     cn(
@@ -79,49 +92,34 @@ export function PublicHeader() {
               </div>
             </div>
           </div>
-          <div className="group relative">
-            <button
-              type="button"
-              className="flex cursor-default items-center gap-1 py-2 text-body-md text-neutral-0/85 transition-colors hover:text-neutral-0"
-            >
-              Library
-            </button>
-            <div className="invisible absolute left-1/2 top-full z-40 w-52 -translate-x-1/2 pt-3 opacity-0 transition-opacity group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
-              <div className="divide-y divide-border overflow-hidden rounded-md border border-border-strong bg-surface-card py-1 shadow-lg ring-1 ring-neutral-900/5">
-                <Link to="/library/videos" className="block px-4 py-2.5 text-body-sm text-neutral-800 hover:bg-brand-accent-subtle hover:text-brand-primary">
-                  Videos
-                </Link>
-                <Link to="/library/blogs" className="block px-4 py-2.5 text-body-sm text-neutral-800 hover:bg-brand-accent-subtle hover:text-brand-primary">
-                  Blogs
-                </Link>
-              </div>
-            </div>
-          </div>
-          <div className="group relative">
-            <button
-              type="button"
-              className="flex cursor-default items-center gap-1 py-2 text-body-md text-neutral-0/85 transition-colors hover:text-neutral-0"
-            >
-              About
-            </button>
-            <div className="invisible absolute left-1/2 top-full z-40 w-52 -translate-x-1/2 pt-3 opacity-0 transition-opacity group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
-              <div className="divide-y divide-border overflow-hidden rounded-md border border-border-strong bg-surface-card py-1 shadow-lg ring-1 ring-neutral-900/5">
-                <Link to="/about/team" className="block px-4 py-2.5 text-body-sm text-neutral-800 hover:bg-brand-accent-subtle hover:text-brand-primary">
-                  The team
-                </Link>
-                <Link to="/about/contact" className="block px-4 py-2.5 text-body-sm text-neutral-800 hover:bg-brand-accent-subtle hover:text-brand-primary">
-                  Contact us
-                </Link>
-              </div>
-            </div>
-          </div>
+          <NavLink to="/about/contact" className={navLinkClass}>
+            Contact us
+          </NavLink>
+          {isAdmin && (
+            <NavLink to="/admin/dashboard" className={navLinkClass}>
+              Admin Dashboard
+            </NavLink>
+          )}
         </nav>
 
         <div className="hidden items-center gap-3 md:flex">
           {isAuthenticated ? (
-            <Link to="/account/bookings" aria-label="Your account">
-              <Avatar name={user.name} size="sm" />
-            </Link>
+            <div className="group relative">
+              <Link to="/account/bookings" aria-label="Your account" className="block">
+                <Avatar name={user.name} size="sm" />
+              </Link>
+              <div className="invisible absolute right-0 top-full z-40 w-40 pt-3 opacity-0 transition-opacity group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
+                <div className="overflow-hidden rounded-md border border-border-strong bg-surface-card py-1 shadow-lg ring-1 ring-neutral-900/5">
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="block w-full px-4 py-2.5 text-left text-body-sm text-neutral-800 hover:bg-brand-accent-subtle hover:text-brand-primary"
+                  >
+                    Log out
+                  </button>
+                </div>
+              </div>
+            </div>
           ) : (
             <>
               <Link to="/login" className="text-body-md text-neutral-0/85 hover:text-neutral-0">
@@ -190,54 +188,44 @@ export function PublicHeader() {
                 </Link>
               </div>
             </div>
-            <div className="px-2 py-2.5">
-              <span className="text-body-md text-neutral-0/85">Library</span>
-              <div className="mt-1 flex flex-col gap-1 pl-3">
-                <Link
-                  to="/library/videos"
-                  onClick={() => setOpen(false)}
-                  className="rounded-sm py-1.5 text-body-sm text-neutral-0/70 hover:text-neutral-0"
-                >
-                  Videos
-                </Link>
-                <Link
-                  to="/library/blogs"
-                  onClick={() => setOpen(false)}
-                  className="rounded-sm py-1.5 text-body-sm text-neutral-0/70 hover:text-neutral-0"
-                >
-                  Blogs
-                </Link>
-              </div>
-            </div>
-            <div className="px-2 py-2.5">
-              <span className="text-body-md text-neutral-0/85">About</span>
-              <div className="mt-1 flex flex-col gap-1 pl-3">
-                <Link
-                  to="/about/team"
-                  onClick={() => setOpen(false)}
-                  className="rounded-sm py-1.5 text-body-sm text-neutral-0/70 hover:text-neutral-0"
-                >
-                  The team
-                </Link>
-                <Link
-                  to="/about/contact"
-                  onClick={() => setOpen(false)}
-                  className="rounded-sm py-1.5 text-body-sm text-neutral-0/70 hover:text-neutral-0"
-                >
-                  Contact us
-                </Link>
-              </div>
-            </div>
-            <div className="mt-2 flex items-center gap-3 border-t border-neutral-0/10 pt-3">
+            <Link
+              to="/about/contact"
+              onClick={() => setOpen(false)}
+              className="rounded-sm px-2 py-2.5 text-body-md text-neutral-0/85 hover:bg-neutral-0/10"
+            >
+              Contact us
+            </Link>
+            {isAdmin && (
+              <Link
+                to="/admin/dashboard"
+                onClick={() => setOpen(false)}
+                className="rounded-sm px-2 py-2.5 text-body-md text-neutral-0/85 hover:bg-neutral-0/10"
+              >
+                Admin Dashboard
+              </Link>
+            )}
+            <div className="mt-2 flex items-center justify-between gap-3 border-t border-neutral-0/10 pt-3">
               {isAuthenticated ? (
-                <Link
-                  to="/account/bookings"
-                  onClick={() => setOpen(false)}
-                  className="flex items-center gap-2 text-body-md text-neutral-0/85"
-                >
-                  <Avatar name={user.name} size="sm" />
-                  {user.name}
-                </Link>
+                <>
+                  <Link
+                    to="/account/bookings"
+                    onClick={() => setOpen(false)}
+                    className="flex items-center gap-2 text-body-md text-neutral-0/85"
+                  >
+                    <Avatar name={user.name} size="sm" />
+                    {user.name}
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOpen(false);
+                      handleLogout();
+                    }}
+                    className="text-body-sm text-neutral-0/70 hover:text-neutral-0"
+                  >
+                    Log out
+                  </button>
+                </>
               ) : (
                 <>
                   <Link to="/login" onClick={() => setOpen(false)} className="text-body-md text-neutral-0/85">

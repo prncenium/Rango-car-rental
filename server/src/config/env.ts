@@ -19,6 +19,18 @@ const envSchema = z
     CLOUDINARY_CLOUD_NAME: z.string().min(1, 'CLOUDINARY_CLOUD_NAME is required'),
     CLOUDINARY_API_KEY: z.string().min(1, 'CLOUDINARY_API_KEY is required'),
     CLOUDINARY_API_SECRET: z.string().min(1, 'CLOUDINARY_API_SECRET is required'),
+    // Contact-us mail (client/src/pages/public/About.tsx's form ->
+    // POST /api/public/contact). Optional so a server without these set
+    // still boots — the route itself 503s until they're configured, rather
+    // than the whole server failing to start over one non-critical feature.
+    SMTP_HOST: z.string().min(1).default('smtp.gmail.com'),
+    SMTP_PORT: z.coerce.number().int().positive().default(465),
+    // Blank-string-tolerant: server/.env ships these as empty placeholders
+    // (not absent) until an operator fills them in, and a bare `z.string().optional()`
+    // would reject `''` rather than treat it the same as unset.
+    SMTP_USER: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(1).optional()),
+    SMTP_PASS: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(1).optional()),
+    CONTACT_RECEIVER_EMAIL: z.string().email().default('rangocarrental@gmail.com'),
   })
   .superRefine((val, ctx) => {
     if (val.JWT_ACCESS_SECRET === val.JWT_REFRESH_SECRET) {

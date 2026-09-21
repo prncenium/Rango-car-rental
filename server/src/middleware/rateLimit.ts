@@ -63,3 +63,6 @@ export const authRateLimit = rateLimit({ bucket: 'auth', limit: 20, windowMs: 15
 export const userRateLimit = rateLimit({ bucket: 'user', limit: 120, windowMs: 60 * 1000, keyFn: actorOrIpKey });
 export const adminRateLimit = rateLimit({ bucket: 'admin', limit: 600, windowMs: 60 * 1000, keyFn: actorOrIpKey });
 export const publicRateLimit = rateLimit({ bucket: 'public', limit: 120, windowMs: 60 * 1000 });
+// Tighter than the general public bucket — each request sends a real email,
+// so this is the platform's one spam/cost surface with no auth in front of it.
+export const contactRateLimit = rateLimit({ bucket: 'contact', limit: 5, windowMs: 15 * 60 * 1000 });

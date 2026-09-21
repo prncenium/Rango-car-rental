@@ -35,6 +35,13 @@ export const bookingEntitySchema = z.object({
   totalAmount: z.number().min(0),
   lateFeeAmount: z.number().min(0).default(0),
 
+  // Distance driven beyond the daily cap (specs/04-business-logic.md
+  // §2.2a), computed at completion from odometerIn - odometerOut and the
+  // car's extraKmRatePerKm snapshot at that moment. Absent until returned.
+  excessKm: z.number().min(0).default(0),
+  excessKmRateSnapshot: z.number().min(0).optional(),
+  excessKmChargeAmount: z.number().min(0).default(0),
+
   amountReceived: z.number().default(0),
   depositReceived: z.number().default(0),
   depositReturned: z.number().default(0),
@@ -44,6 +51,8 @@ export const bookingEntitySchema = z.object({
   depositDeductions: z.array(depositDeductionSchema).default([]),
 
   conditionNote: z.string().optional(),
+
+  termsAcceptedAt: z.coerce.date(),
 
   status: z.enum(BOOKING_STATUSES).default('REQUESTED'),
 

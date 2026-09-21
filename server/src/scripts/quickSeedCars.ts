@@ -36,9 +36,20 @@ interface CarSpec {
   seats?: number;
   mileageKm?: number;
   rentalPricePerDay?: number;
+  /** From the operator's rate card, per model — see docs/legal or the rate-card image. */
+  depositAmount?: number;
+  /** ₹/km charged beyond the 300km/day cap (specs/04-business-logic.md §2.2a). */
+  extraKmRatePerKm?: number;
   city?: string;
   state?: string;
   description?: string;
+}
+
+// Weekly rate must be strictly less than 7x the daily rate (shared/src/dto/car.ts's
+// own validation) — the operator wants "no weekly discount, just daily x 7", so this
+// is the closest legal value to that (1 rupee under, functionally identical).
+function flatWeeklyRate(dailyRate: number): number {
+  return dailyRate * 7 - 1;
 }
 
 // ---- EDIT THIS LIST -------------------------------------------------------
@@ -52,6 +63,8 @@ const CARS: CarSpec[] = [
     fuelType: 'PETROL',
     transmission: 'AUTOMATIC',
     rentalPricePerDay: 3800,
+    depositAmount: 10000,
+    extraKmRatePerKm: 20,
   },
   {
     make: 'Maruti Suzuki',
@@ -61,6 +74,8 @@ const CARS: CarSpec[] = [
     fuelType: 'PETROL',
     transmission: 'MANUAL',
     rentalPricePerDay: 2200,
+    depositAmount: 5000,
+    extraKmRatePerKm: 12,
   },
   {
     make: 'Maruti Suzuki',
@@ -71,6 +86,8 @@ const CARS: CarSpec[] = [
     transmission: 'MANUAL',
     seats: 5,
     rentalPricePerDay: 2800,
+    depositAmount: 5000,
+    extraKmRatePerKm: 15,
   },
   {
     make: 'Mahindra',
@@ -81,6 +98,8 @@ const CARS: CarSpec[] = [
     transmission: 'MANUAL',
     seats: 4,
     rentalPricePerDay: 4200,
+    depositAmount: 10000,
+    extraKmRatePerKm: 20,
   },
   {
     make: 'Honda',
@@ -90,6 +109,8 @@ const CARS: CarSpec[] = [
     fuelType: 'PETROL',
     transmission: 'AUTOMATIC',
     rentalPricePerDay: 3200,
+    depositAmount: 4000,
+    extraKmRatePerKm: 15,
   },
   {
     make: 'Kia',
@@ -99,6 +120,8 @@ const CARS: CarSpec[] = [
     fuelType: 'PETROL',
     transmission: 'MANUAL',
     rentalPricePerDay: 2700,
+    depositAmount: 5000,
+    extraKmRatePerKm: 15,
   },
   {
     make: 'Maruti Suzuki',
@@ -108,6 +131,8 @@ const CARS: CarSpec[] = [
     fuelType: 'HYBRID',
     transmission: 'AUTOMATIC',
     rentalPricePerDay: 3600,
+    depositAmount: 5000,
+    extraKmRatePerKm: 15,
   },
 ];
 // ---------------------------------------------------------------------------
@@ -167,6 +192,9 @@ async function main() {
       description: spec.description ?? defaultDescription(spec),
       location: { city: spec.city ?? DEFAULTS.city, state: spec.state ?? DEFAULTS.state },
       rentalPricePerDay: spec.rentalPricePerDay ?? DEFAULTS.rentalPricePerDay,
+      rentalPricePerWeek: flatWeeklyRate(spec.rentalPricePerDay ?? DEFAULTS.rentalPricePerDay),
+      depositAmount: spec.depositAmount,
+      extraKmRatePerKm: spec.extraKmRatePerKm,
     });
     console.log(`created draft ${car.id} (${car.registrationNumber})`);
 

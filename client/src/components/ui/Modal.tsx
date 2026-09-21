@@ -43,6 +43,14 @@ export function Modal({ open, onClose, title, children, descriptionId }: ModalPr
   const dialogRef = useRef<HTMLDivElement>(null);
   const titleId = useRef(`modal-title-${Math.random().toString(36).slice(2)}`).current;
   const previouslyFocused = useRef<HTMLElement | null>(null);
+  // Callers routinely pass an inline `onClose` (e.g. `() => setX(null)`), a
+  // new function identity on every render of the caller — including every
+  // render caused by typing into a field this modal itself contains. Reading
+  // it through a ref (updated every render, but not a dependency) keeps the
+  // focus-trap effect below from re-running whenever that happens; it should
+  // only run when the dialog actually opens or closes, not on every keystroke.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open) return;
@@ -55,7 +63,7 @@ export function Modal({ open, onClose, title, children, descriptionId }: ModalPr
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
         event.preventDefault();
-        onClose();
+        onCloseRef.current();
         return;
       }
 
@@ -80,7 +88,8 @@ export function Modal({ open, onClose, title, children, descriptionId }: ModalPr
       document.removeEventListener('keydown', onKeyDown);
       previouslyFocused.current?.focus();
     };
-  }, [open, onClose]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- onClose is read via onCloseRef, deliberately excluded (see comment above)
+  }, [open]);
 
   if (!open) return null;
 

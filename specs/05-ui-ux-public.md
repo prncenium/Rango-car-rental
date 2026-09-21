@@ -223,8 +223,9 @@ A single-route, multi-step flow (not a wizard with its own URLs per step — the
 ├───────────────────────────────┴───────────────────────────┤
 │ WHAT HAPPENS NEXT (static explainer block, always visible) │
 │  1. Owner and admin review your request                     │
-│  2. Admin confirms — you'll see contact details appear      │
-│  3. You meet in person, inspect the car, pay directly        │
+│  2. Admin confirms — you'll see our godown pickup details    │
+│  3. You collect the car at the godown, inspect it, pay       │
+│     directly — no need to meet the owner                     │
 ├─────────────────────────────────────────────────────────┤
 └─────────────────────────────────────────────────────────┘
 ```
@@ -276,13 +277,15 @@ Row → `/account/bookings/:bookingId` (detail below).
 │  {startDate} → {endDate} · {days} days                      │
 │  ₹{totalAmount}  (amountReceived shown if > 0, spec 04 §6)   │
 ├─────────────────────────────────────────────────────────┤
-│ OWNER CONTACT                                               │
-│  IF phone revealed (status ∈ CONFIRMED/ACTIVE/COMPLETED/     │
-│     TERMINATED/NO_SHOW, spec 02 §7.2 PartyContact rule):     │
-│    {name} · {phone}                                          │
+│ PICKUP AT OUR GODOWN                                          │
+│  IF status ∈ CONFIRMED/ACTIVE/COMPLETED/TERMINATED/NO_SHOW    │
+│     (spec 04 §4.2 RULE GH-2):                                 │
+│    {pickup.address}, {pickup.city} · {pickup.contactPhone}    │
+│    {pickup.instructions, if present}                          │
 │  ELSE:                                                        │
-│    {name} · "Contact details appear once your request is     │
-│              confirmed."                                      │
+│    "Pickup details appear once your request is confirmed."    │
+│  Owner's name shown separately, above — never a phone number  │
+│  for the owner, in any status (spec 04 §4.1 RULE GH-1).       │
 ├─────────────────────────────────────────────────────────┤
 │ STATUS EXPLANATION (copy per §6/§7, keyed to current status) │
 ├─────────────────────────────────────────────────────────┤
@@ -294,8 +297,9 @@ Row → `/account/bookings/:bookingId` (detail below).
 ```
 
 - **Data source (list):** `GET /api/user/bookings?role=RENTER` (E-20), default sort `createdAt:desc`. Status filter dropdown maps to the repeatable `status` query param.
-- **Data source (detail):** `GET /api/user/bookings/:bookingId` (E-21) → `BookingDetail`, renter view (`owner: PartyContact`).
-- **Revealed contacts:** exactly the `PartyContact` gating rule from spec 02 §7.2 — `phone` present only once `status ∈ { CONFIRMED, ACTIVE, COMPLETED, TERMINATED, NO_SHOW }`; otherwise `{ id, name }` only. The UI must render the "not yet revealed" copy explicitly (§7) rather than just omitting the phone field silently — an absent field with no explanation reads as a bug.
+- **Data source (detail):** `GET /api/user/bookings/:bookingId` (E-21) → `BookingDetail`, renter view (`owner: PartyContact`, `pickup?: GodownInfo`).
+- **Owner contact:** `owner: PartyContact` is `{ id, name }` in **every** status — never a phone (spec 04 §4.1 RULE GH-1). There is no gating logic left to render here; the owner's name is simply always shown, and no UI ever needs to explain a withheld phone number for the owner because one is never expected.
+- **Godown pickup:** `pickup` is present only once `status ∈ { CONFIRMED, ACTIVE, COMPLETED, TERMINATED, NO_SHOW }` (spec 04 §4.2 RULE GH-2); otherwise it is absent. The UI must render the "not yet available" copy explicitly (§7) rather than just omitting the block silently — an absent block with no explanation reads as a bug, same reasoning the old contact-reveal rule used.
 - **Actions:**
   - `REQUESTED` → **Cancel request** button → confirm dialog ("Withdraw this request? This can't be undone.") → `POST /api/user/bookings/:bookingId/cancel` (E-18, `guardIsRenter`, `guardStatusIsRequested`).
   - `CONFIRMED` → **Request cancellation** button → dialog requiring a `reason` (required per E-19's DTO) → `POST /api/user/bookings/:bookingId/request-cancellation` (E-19). Copy must state plainly that this does **not** cancel the booking by itself — an admin resolves it (§7).
@@ -457,8 +461,8 @@ Existing atoms (`client/src/components/ui/*`) are reused, not redefined. New mol
 ```
 ATOMS (existing, reused everywhere below)
 ├── Button, Input, Select, Textarea, Field, Badge, Card, Modal, Toast, Avatar
-├── icons.ts (add: CalendarIcon, UploadIcon, PhoneIcon if not already present —
-│   needed by BookingDetail's contact block and the photo uploader)
+├── icons.ts (add: CalendarIcon, UploadIcon, MapPinIcon, PhoneIcon if not already
+│   present — needed by BookingDetail's godown pickup block and the photo uploader)
 
 MOLECULES
 ├── (existing, public) CarCard, CarCardSkeleton, EmptyState, FilterPanel
@@ -476,8 +480,13 @@ MOLECULES
 │                                            (days × rate, or blended weekly),
 │                                            used by Listing Detail (price display)
 │                                            and Booking Request Flow (preview)
-├── PartyContactCard                     — renders {name, phone?} with the
-│                                            "not yet revealed" fallback copy (§3.5)
+├── PickupInfoCard                       — renders the godown `pickup: GodownInfo`
+│                                            block (renter's Booking detail only,
+│                                            spec 04 §4.2) with the "not yet
+│                                            available" fallback copy (§3.5) —
+│                                            replaces the removed `PartyContactCard`,
+│                                            which no longer has a `phone?` field to
+│                                            render (spec 04 §4.1 RULE GH-1)
 ├── ConfirmDialog                        — wraps Modal; used by every destructive/
 │                                            state-changing action (cancel, withdraw,
 │                                            delist, request-cancellation, delete)
@@ -523,10 +532,12 @@ ORGANISMS
 | `StatusBadge` | | | | | ✓ | ✓ | ✓ (via ListingStatusExplainer) | |
 | `AvailabilityCalendar` | | | ✓ (readonly) | ✓ (selectable) | | | | |
 | `PriceQuote` | | | ✓ | ✓ | | | | |
-| `PartyContactCard` | | | | | ✓ | ✓ | | |
+| `PickupInfoCard` | | | | | ✓ | | | |
 | `ConfirmDialog` | | | | | ✓ | ✓ | | |
 | `PhotoUploader` | | | | | | | ✓ | |
 | `AccountShell` | | | | ✓ | ✓ | ✓ | ✓ | ✓ |
+
+`PickupInfoCard` is renter-dashboard-only, not symmetric like the removed `PartyContactCard` was — spec 04 §4.2 RULE GH-2 discloses the godown to the renter alone; the owner's dashboard gets no equivalent block.
 
 ---
 
@@ -610,13 +621,13 @@ There is no payment gateway and no online finalization anywhere in this product.
 
 1. **"Requested" never means "booked."** (RULE AV-2, spec 04 §1.4.) Every rendering of a `REQUESTED` booking — dashboard row, detail page, the confirmation toast right after submitting — must include a sentence to that effect, not rely on the badge color. This is the single most important copy rule in the document because it is the one place a user's money-and-time expectations could be set wrong.
 
-2. **"Confirmed" means "meet in person," not "done."** The moment a booking reaches `CONFIRMED`, the copy must tell the renter what happens next: meet the owner, inspect the car, hand over payment, at pickup. Never phrase `CONFIRMED` as if the transaction is complete — it is the point at which the *in-person* transaction becomes scheduled, not executed.
+2. **"Confirmed" means "come to the godown," not "done."** The moment a booking reaches `CONFIRMED`, the copy must tell the renter what happens next: collect the car at the godown, inspect it, hand over payment, at pickup — **never** "meet the owner" (spec 04 §4, amended 2026-09-21: the renter and owner never meet or contact each other; the admin mediates the entire handover). Never phrase `CONFIRMED` as if the transaction is complete — it is the point at which the *in-person* transaction becomes scheduled, not executed.
 
 3. **Every price shown before `CONFIRMED` is a quote, never a charge.** The Booking Request Flow's `PriceQuote`, the Listing Detail's per-day rate, and the dashboard's `totalAmount` are all labelled or captioned as an estimate/total-due, never "charged," "paid," or "billed" — those words are reserved for `amountReceived` once an admin has recorded a payment (spec 04 §"No payment gateway": *"every amount it stores as received is an admin's assertion that cash arrived"*).
 
 4. **Cancellation copy must match what actually happens to the car.** `Cancel request` (E-18, on `REQUESTED`) copy: *"withdraws your request — nothing was ever held, so nothing changes for the owner."* `Request cancellation` (E-19, on `CONFIRMED`) copy: *"asks an admin to cancel this booking. The car stays reserved until an admin decides — this doesn't cancel it immediately."* These two must never share wording, because they do materially different things (spec 02 E-18 vs. E-19).
 
-5. **Contact reveal has an explicit "why."** Wherever a name-only party contact is shown pre-`CONFIRMED` (§3.5, §3.6), the copy explains *why* the phone number is withheld — *"Contact details appear once your request is confirmed"* — rather than just omitting the field. An omitted field with no explanation reads as broken; an explained omission reads as intentional trust design.
+5. **Godown pickup disclosure has an explicit "why."** Wherever the pickup block is absent pre-`CONFIRMED` (§3.5), the copy explains *why* — *"Pickup details appear once your request is confirmed"* — rather than just omitting the field. An omitted field with no explanation reads as broken; an explained omission reads as intentional trust design. **Party contact copy no longer needs this treatment** — `PartyContact` never carries a phone in any status now (spec 04 §4.1 RULE GH-1), so there is nothing conditional to explain about it; only the godown pickup block remains conditional on status.
 
 6. **The driving licence field is data, not a check.** Per §3.8 and spec 03 §5.4's own instruction ("stated plainly so nobody later mistakes this field for an identity control"), the Profile page's helper text must say the platform does not verify it. This is the one place in the product most likely to accidentally imply a security guarantee that does not exist, and the copy is load-bearing against that.
 

@@ -1,6 +1,7 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import type { PublicCarSummary } from '../../api/cars';
 import { CarSilhouetteIcon, FuelIcon, GearIcon, MapPinIcon, SeatIcon } from '../ui/icons';
+import { Button } from '../ui/Button';
 
 const FUEL_LABEL: Record<string, string> = {
   PETROL: 'Petrol',
@@ -14,6 +15,21 @@ const FUEL_LABEL: Record<string, string> = {
 // public-page cards"), a hairline border rather than a shadow (§6: shadow
 // is reserved for genuine elevation, not flat cards).
 export function CarCard({ car }: { car: PublicCarSummary }) {
+  const navigate = useNavigate();
+
+  // "Book now" goes to the same place as clicking anywhere else on the
+  // card — the car detail page (where the actual booking request form
+  // lives, further down that page) — not a separate /request route. It
+  // still needs its own click handler rather than just being decorative
+  // text: a nested <a> inside the outer <Link> would be invalid HTML, so
+  // this is a plain button whose click is stopped from bubbling (to avoid
+  // double-navigating) and navigates explicitly instead.
+  function handleBookNow(event: React.MouseEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    navigate(`/cars/${car.id}`);
+  }
+
   return (
     <Link
       to={`/cars/${car.id}`}
@@ -64,13 +80,16 @@ export function CarCard({ car }: { car: PublicCarSummary }) {
           </span>
         </div>
 
-        <div className="mt-4 flex items-baseline justify-between border-t border-border pt-3">
+        <div className="mt-4 flex items-center justify-between gap-3 border-t border-border pt-3">
           <div>
             <span className="font-display text-heading-sm text-brand-primary">
               ₹{car.rentalPricePerDay.toLocaleString('en-IN')}
             </span>
             <span className="text-body-sm text-neutral-500"> / day</span>
           </div>
+          <Button variant="primary" size="sm" onClick={handleBookNow}>
+            Book now
+          </Button>
         </div>
       </div>
     </Link>

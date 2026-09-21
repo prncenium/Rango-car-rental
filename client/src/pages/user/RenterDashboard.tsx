@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { BookingStatus } from '@rango/shared';
 import { BOOKING_STATUSES } from '@rango/shared';
-import { cancelOwnBooking, listOwnBookings, type OwnBooking } from '../../api/bookings';
+import { cancelOwnBooking, downloadOwnBookingAgreement, listOwnBookings, type OwnBooking } from '../../api/bookings';
 import { ApiError } from '../../lib/apiClient';
 import { todayIso } from '../../lib/dateUtc';
 import { AccountShell } from '../../components/account/AccountShell';
@@ -32,13 +32,37 @@ export function RenterDashboardPage() {
   );
 }
 
+// Mirrors server/src/services/booking.service.ts's AGREEMENT_ELIGIBLE_STATUSES
+// — available from the moment a request is sent (the customer
+// acknowledgement is captured at request time); only REJECTED/CANCELLED
+// (never confirmed) have nothing to put in the document.
+const AGREEMENT_ELIGIBLE_STATUSES: BookingStatus[] = [
+  'REQUESTED',
+  'CONFIRMED',
+  'CANCELLATION_REQUESTED',
+  'ACTIVE',
+  'COMPLETED',
+  'TERMINATED',
+  'NO_SHOW',
+];
+
 function RenterDashboard() {
   const navigate = useNavigate();
   const [statusFilter, setStatusFilter] = useState<BookingStatus | ''>('');
   const [page, setPage] = useState(1);
   const [cancelTarget, setCancelTarget] = useState<OwnBooking | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const today = todayIso();
+
+  async function handleDownloadAgreement(bookingId: string) {
+    setDownloadingId(bookingId);
+    try {
+      await downloadOwnBookingAgreement(bookingId);
+    } finally {
+      setDownloadingId(null);
+    }
+  }
 
   const query = useQuery({
     queryKey: ['own-bookings', 'renter', statusFilter, page],
@@ -118,8 +142,24 @@ function RenterDashboard() {
           {bookings.map((booking) => {
             const statusMeta = bookingStatusMeta(booking.status);
             const stale = isStaleRequest(booking.status, booking.startDate, today);
+            const thumbnail = booking.car.images[0];
             return (
-              <li key={booking.id} className="rounded-lg border border-border bg-surface-card p-4">
+              <li key={booking.id} className="flex gap-4 rounded-lg border border-border bg-surface-card p-4">
+                <div className="hidden h-20 w-28 shrink-0 overflow-hidden rounded-md bg-surface-sunken sm:block">
+                  {thumbnail ? (
+                    <img
+                      src={thumbnail}
+                      alt={`${booking.car.make} ${booking.car.model}`}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-caption text-neutral-400">
+                      No photo
+                    </div>
+                  )}
+                </div>
+
+                <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <p className="text-body-md font-medium text-neutral-900">
@@ -155,19 +195,34 @@ function RenterDashboard() {
 
                 {/* Owner contact is deliberately absent from this list view — spec 02
                     §7.2: BookingSummary carries no counterparty at all, in any state,
-                    so a list endpoint can't be used to harvest contacts in bulk.
-                    PartyContact only appears on the single-record booking detail. */}
+                    so a list endpoint can't be used to harvest contacts in bulk. Party
+                    contact never carries a phone number at all any more (spec 04 §4.1
+                    RULE GH-1, godown-mediated handover) — pickup details, not owner
+                    contact, are what appear once a request is confirmed. */}
                 <p className="mt-2 text-caption text-neutral-400">
-                  Contact details appear once your request is confirmed.
+                  Pickup details appear once your request is confirmed.
                 </p>
 
-                {booking.status === 'REQUESTED' && (
-                  <div className="mt-3">
-                    <Button variant="secondary" size="sm" onClick={() => setCancelTarget(booking)}>
-                      Cancel request
-                    </Button>
+                {(booking.status === 'REQUESTED' || AGREEMENT_ELIGIBLE_STATUSES.includes(booking.status)) && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {booking.status === 'REQUESTED' && (
+                      <Button variant="secondary" size="sm" onClick={() => setCancelTarget(booking)}>
+                        Cancel request
+                      </Button>
+                    )}
+                    {AGREEMENT_ELIGIBLE_STATUSES.includes(booking.status) && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        isLoading={downloadingId === booking.id}
+                        onClick={() => handleDownloadAgreement(booking.id)}
+                      >
+                        Download Rental Agreement
+                      </Button>
+                    )}
                   </div>
                 )}
+                </div>
               </li>
             );
           })}

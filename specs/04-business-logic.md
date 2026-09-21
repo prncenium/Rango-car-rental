@@ -401,6 +401,42 @@ ELSE:
 
 Row 13 is the case the `min()` exists for.
 
+### 2.2a Daily distance cap and excess mileage
+
+> **RULE PR-1a.** Every rental day includes `DAILY_DISTANCE_CAP_KM = 300` km of free driving distance. Distance driven beyond `days × 300` is charged to the renter at the car's own `extraKmRatePerKm` — never a platform-wide rate. This is a quote-time and completion-time calculation only; like everything else in this section, it is never charged, authorised, or captured by the system (§2, top).
+
+**Field, on `Car` (`Δ-B2` extended).**
+
+| Field | Type | Required | Rule |
+|---|---|---|---|
+| `extraKmRatePerKm` | number ≥ 0 | no | ₹/km charged once total distance driven on a booking exceeds `days × DAILY_DISTANCE_CAP_KM`. **IF** absent **THEN** excess distance is not billed (rate treated as `0`) — same absent-means-platform-default shape as `depositAmount` (§2.1), except here there is no platform default to fall back to: an owner who wants excess mileage billed must set a rate. |
+
+Owner-editable under the same `guardEditableModerationState` gate as the other price fields (§2.1), and — because it changes what a live rental could end up costing — it is included in `guardNoLiveRentalOnPriceChange`'s trigger set alongside `rentalPricePerDay`/`rentalPricePerWeek`/`depositAmount`.
+
+**The calculation, at completion (E-42 `complete`).**
+
+```
+allowedKm     = days × DAILY_DISTANCE_CAP_KM
+distanceDriven = max(0, odometerIn − odometerOut)
+excessKm      = max(0, distanceDriven − allowedKm)
+excessKmChargeAmount = excessKm × car.extraKmRatePerKm   // snapshotted as excessKmRateSnapshot
+```
+
+- **Computed only when both `odometerOut` and `odometerIn` are present.** A booking completed without one of the two readings (spec 02 E-41/E-42 leave both optional) carries no excess-km charge — there is nothing to measure the distance from.
+- **`excessKmRateSnapshot` is taken at completion, not at request time**, mirroring `ratePerDaySnapshot`'s snapshot-at-the-moment-that-matters pattern (§2.1) — unlike the daily rate, there is nothing to quote up front beyond the car's currently-listed rate (surfaced to the renter pre-booking per the table above), because the actual distance is unknowable until the car returns.
+- **`excessKmChargeAmount` is added to `Booking.totalAmount`** at the same moment it is computed — this is the one place in §2 where a number computed after the quote changes the stored total, and it is deliberate: unlike a late fee (§2.3, admin-entered and never enforced), excess mileage is a mechanical fact of the odometer, not a judgement call.
+- **Buffer days are irrelevant here** — this is total distance driven, not days occupied; §1.5's buffer-is-never-billed rule concerns `days`, not km.
+
+**Worked example** — a 3-day rental (`allowedKm = 900`), car's `extraKmRatePerKm = 15`, `odometerOut = 40,000`, `odometerIn = 41,050`:
+
+```
+distanceDriven = 41,050 − 40,000 = 1,050
+excessKm       = max(0, 1,050 − 900) = 150
+excessKmChargeAmount = 150 × 15 = 2,250
+```
+
+`Booking.totalAmount` increases by `₹2,250` when the booking is marked returned.
+
 ### 2.3 Partial days and late returns
 
 > **RULE PR-1. The platform bills in whole days. There is no hourly rate, no half-day, and no pro-rata.** A rental day is a calendar day; a car picked up at 6pm and returned at 9am two days later occupies the days it occupies.
@@ -689,69 +725,39 @@ Legend: `B` = `Booking`, `C` = `Car`, `L` = `BookingDayLock`, `P` = `Payment`, `
 
 ---
 
-## 4. Contact reveal
+## 4. Godown-mediated handover *(replaces the removed "Contact reveal" section — amendment 2026-09-21)*
 
-### 4.1 Trigger
+**Scope change.** There is a single central godown/depot. Every car — whether from the admin's own fleet or an outside owner's listing — is brought to this one godown, and the renter picks up the car there. **The renter and the car owner never see each other's contact information, at any point, in any booking status.** The admin holds both parties' contact details throughout and mediates the entire handover — coordinating drop-off with the owner and pickup with the renter — never by putting the two of them in direct contact. This removes RULE CR-1/CR-2/CR-3 and the entire conditional-reveal mechanism described below in the pre-amendment text; there is no longer anything to reveal, so there is no trigger, no symmetry rule, and no revocation to define.
 
-> **RULE CR-1.** Phone numbers are revealed to both parties **at the moment a booking reaches `CONFIRMED`, and not before.**
+### 4.1 `PartyContact` no longer carries a phone, ever
 
-- **IF** `Booking.status ∈ { CONFIRMED, CANCELLATION_REQUESTED, ACTIVE, COMPLETED, TERMINATED, NO_SHOW }` **THEN** `PartyContact.phone` is present.
-- **IF** `Booking.status ∈ { REQUESTED, REJECTED, CANCELLED }` **THEN** `PartyContact` is `{ id, name }` with **no** `phone` key. (`null` is never sent — spec 02 §2.2.)
-- The trigger is the **status**, evaluated on every read. There is no `contactRevealedAt` field and no stored reveal flag. A derived rule cannot go stale, and there is nothing to migrate if the rule changes.
+> **RULE GH-1 (replaces CR-1/CR-2).** `PartyContact` is `{ id, name }` in **every** booking status, for both directions (renter viewing owner, owner viewing renter). There is no `phone?` key on this type any more, and no status makes one appear. (spec 02 §7.2 amended to match — see that spec's own changelog entry.)
 
-**Why `CONFIRMED` and not earlier.** A `REQUESTED` booking is not a relationship: no admin has agreed anything, no car is held, and the platform has no gateway standing between the parties. Revealing on request would make the request form a phone-number harvester — submit requests across every listing, read the owners' numbers, cancel. `CONFIRMED` is the first moment a real transaction exists.
+- This is a **type-level** removal, not a value-level `null`/omission: `PartyContact` simply has no field to hold a phone number. There is nothing to gate, so there is no gating logic to get wrong.
+- **Never shown to a counterparty, in any status** (unchanged from the removed §4.2's list, restated because it still governs `PartyContact`): `email`, `drivingLicence.number`, `drivingLicence.expiryDate`, `role`, `isActive`, `createdAt`, home address, other bookings/listings/history.
+- **Admin is unaffected.** `AdminBookingDetail` (E-38) continues to carry full `UserSummary` — including `phone` — for both parties, unconditionally, in every status. Admin-facing endpoints are explicitly out of scope for this change.
+- **`BookingSummary` still carries no counterparty at all**, in any status (spec 02 §7.2) — unchanged.
 
-**Why not later (at handover).** The parties genuinely need to reach each other between confirmation and handover: to agree a meeting time, to warn of a delay, to say the car is not going to be there. Withholding until `ACTIVE` would mean the only channel for arranging the handover is the admin, on every single booking.
+> **OPEN QUESTION OQ-NEW-1.** Does "never see each other's contact info" extend to the counterparty's **name** as well as phone, or only to the means of contacting them (phone/email — the two fields that would let one party reach the other outside the platform)? This document assumes **name stays visible** (as it already was, unconditionally, from `REQUESTED` onward, before this amendment) because a name alone discloses no way to make contact and the admin/owner queue UIs (spec 05.5 §3.1, spec 05 §3.6) identify counterparty rows by name. If the intent is full mutual anonymity — the renter never learns whose car it is, the owner never learns who booked it — that is a materially larger change (queue rows, dispute handling, and review attribution in spec 04 §7 would all need re-specification) and should be scoped as its own amendment rather than assumed here.
 
-### 4.2 What is revealed, to whom, in which direction
+### 4.2 Godown pickup disclosure (resolves OQ-B17)
 
-> **RULE CR-2. The reveal is symmetric.** Both sides cross the same threshold at the same instant, and each sees the same shape of the other.
+> **RULE GH-2.** The **instant** a booking reaches `CONFIRMED`, the renter's `BookingDetail` (E-21) gains a `pickup: GodownInfo` block — the single, global godown's address, contact phone, and any standing instructions. This is **not** per-car, per-owner, or per-booking data; it is read from the `SystemConfig` singleton (spec 03 §11.8) and is identical for every renter, every time. Before `CONFIRMED`, `pickup` is absent, exactly the way `PartyContact.phone` used to be absent (same UI obligation as the removed RULE CR-1's "not yet revealed" copy — see spec 05 §3.5's `PickupInfoCard`).
 
-| Viewer | Sees about the counterparty | Endpoint |
-|---|---|---|
-| Renter | `owner: PartyContact` = `{ id, name, phone? }` | `GET /api/user/bookings/:id` (E-21) |
-| Car owner | `renter: PartyContact` = `{ id, name, phone? }` | E-21 |
-| Admin | both, in full, always, in every status | E-38 |
-| Anyone else | nothing | — |
+```
+GodownInfo = { address: string, city: string, state: string, pincode: string,
+               contactPhone: string, instructions?: string }
+```
 
-An earlier draft of spec 02 gated only the owner's view of the renter and left the renter's view of the owner ungated, which handed out an owner's phone number on an unconfirmed request. `PartyContact` replaced both and this document keeps it.
+- **This directly answers OQ-B17.** The earlier open question asked whether to disclose a pickup location and worried about exposing an *owner's* address. That concern no longer applies: the disclosed address is the godown's, a fixed business location the admin already controls, not any private party's address. **OQ-B17 is resolved: yes, disclose a pickup location, sourced from `SystemConfig`, never from `Car`/`User`.**
+- **The owner does not receive a symmetric disclosure of the renter.** The owner already knows the godown's address (they drop the car off there); nothing about the renter is added to the owner's `BookingDetail` by this rule.
+- Whether `pickup` should also appear on `CANCELLATION_REQUESTED`/`ACTIVE`/`COMPLETED`/`TERMINATED`/`NO_SHOW` (the same status set the old RULE CR-1 used) or should disappear again on a terminal status: **assume it persists on every status the booking reaches after `CONFIRMED`, same as the old contact reveal never revoked post-handover** — but this is a light assumption, not a re-derivation from first principles, and should be confirmed alongside OQ-NEW-1.
 
-**Never revealed to a counterparty, in any status:**
+### 4.3 Ripple effects out of scope for this amendment — flagged, not resolved
 
-| Field | Why |
-|---|---|
-| `email` | It is the login identifier. Disclosing it turns a booking into a credential-stuffing target list. |
-| `drivingLicence.number` | §5. The owner sees the **physical licence** at handover; the platform does not hand over the string. |
-| `drivingLicence.expiryDate` | Same. |
-| `role`, `isActive`, `createdAt` | Account state is not counterparty business. |
-| Home address, or any address | The platform stores none. |
-| Other bookings, other listings, history | Not in `PartyContact` and not joinable through any user endpoint. |
+> **OPEN QUESTION OQ-NEW-2.** §3.2's confirm-time checklist (E-39) still reads *"the owner has agreed … and will be present at handover"*, and §5's licence-check narrative ("the owner sees the physical licence at handover") both assume the **owner is physically present when the renter takes the car**. Under the godown model, the renter picks the car up **from the admin at the godown** — the owner dropped it off earlier, separately, and is not necessarily present for pickup. If the owner is never present at renter pickup, then: (a) the licence-physical-check in §5 is performed by the **admin**, not the owner, and (b) §3.2's checklist wording is stale. **This amendment does not rewrite §3.2, §5, or the E-39/E-41 guard narratives — that is a larger handover-model change than "remove contact reveal" and is called out here so it is not silently left inconsistent.** Recommend scoping it as a follow-up amendment once OQ-NEW-1 is answered.
 
-**`BookingSummary` carries no counterparty at all, in any status** (spec 02 §7.2). Contact appears **only** on `BookingDetail`, a single-record read. This is deliberate: list endpoints must not be usable to harvest contacts in bulk, so `GET /api/user/bookings` returns no phone numbers no matter how many confirmed bookings it pages through.
-
-**Rate limiting.** E-21 sits on `user.read` (120/min). **OQ-B16** asks whether single-booking detail reads need a tighter, separate bucket.
-
-### 4.3 Revocation
-
-> **RULE CR-3. Revealed contact is revoked when a booking ends *without the car ever changing hands*, and is permanent once it has.**
-
-| Terminal status | Reached from | Phone still visible? |
-|---|---|---|
-| `CANCELLED` | `REQUESTED` | **Never was.** `REQUESTED` never revealed. |
-| `CANCELLED` | `CONFIRMED` or `CANCELLATION_REQUESTED` | **No — revoked.** Next read returns `{ id, name }`. |
-| `REJECTED` | `REQUESTED` | Never was. |
-| `NO_SHOW` | `CONFIRMED` | **Yes — retained.** |
-| `COMPLETED` | `ACTIVE` | **Yes — retained.** |
-| `TERMINATED` | `ACTIVE` | **Yes — retained.** |
-
-- **The line is whether the car was handed over.** Once two people have met and one has driven off in the other's vehicle, the platform pretending they cannot contact each other is theatre: they have met, and the owner has seen the renter's licence. Worse, it would strip the parties of the means to resolve exactly the disputes that follow a completed or terminated rental — a scratch noticed the next morning, a forgotten item, a fuel disagreement.
-- **`NO_SHOW` retains it** because the owner waited for a person who did not arrive and is entitled to reach them, and because the admin adjudicating the strike (§5.4) may need both sides to have talked.
-- **A cancellation before handover revokes it** because nothing happened. The revocation is a real read-time change: the number disappears from the UI on the next fetch. **It does not un-ring the bell** — whoever already read the number still has it. Revocation is a correctness and hygiene measure, not a security control, and no part of this spec may rely on it as one.
-- **IF** a `CANCELLATION_REQUESTED` booking is **denied** (E-45) **THEN** it returns to `CONFIRMED` and the phone remains visible throughout. Nothing was ever revoked; the request did not release anything (spec 02 E-19).
-
-> **OPEN QUESTION OQ-B16.** Should `GET /api/user/bookings/:id` have its own rate-limit bucket, tighter than `user.read`? At 120/min a script with many confirmed bookings could enumerate counterparty numbers quickly. The cheaper control is that it takes a confirmed booking per number, which an admin had to approve. **Assumption: `user.read`, no separate bucket.**
-
-> **OPEN QUESTION OQ-B17.** Should the reveal include the car's **pickup location** (currently only `city`/`state` are stored)? A confirmed rental needs an address to meet at, and today that has to be arranged by phone. Adding one means storing an owner's address, which is materially more sensitive than a phone number. **Assumption: no address field; the parties agree a meeting point by phone.**
+> **OPEN QUESTION OQ-B16 — now moot.** The former question asked whether `GET /api/user/bookings/:id` needed a tighter rate-limit bucket to prevent enumerating counterparty phone numbers. Since no phone is ever exposed to a counterparty any more, there is nothing to enumerate. **Resolved: moot, no action needed.**
 
 ---
 
@@ -1189,7 +1195,7 @@ NotificationSchema.index({ entityType: 1, entityId: 1 });
 ```
 
 - Written **in the same transaction as the transition that causes it.** A notification that survives a rolled-back transition would tell a user about something that did not happen.
-- **Never carries a phone number, a licence number, a counterparty's name, or any amount of money.** Titles and bodies are templated from the `kind` plus ids, and rendered client-side. A notification body is a log line by another name, and spec 03 §6.4's redaction rules apply to it. The counterparty's **name** is included in that list even though §4.1 already discloses it at `REQUESTED`: `title`/`body` are free strings, so the constraint has to bind the *templates*, not rely on what happens to be disclosable today. A later `kind` that embeds a name would otherwise ship a disclosure past the `PartyContact` gate without touching it.
+- **Never carries a phone number, a licence number, a counterparty's name, or any amount of money.** Titles and bodies are templated from the `kind` plus ids, and rendered client-side. A notification body is a log line by another name, and spec 03 §6.4's redaction rules apply to it. The counterparty's **name** is included in that list even though §4.1 already discloses it in every status (subject to OQ-NEW-1): `title`/`body` are free strings, so the constraint has to bind the *templates*, not rely on what happens to be disclosable today. A later `kind` that embeds a name would otherwise ship a disclosure past the `PartyContact` gate without touching it. **A notification body must never carry the godown's phone number either** — `pickup.contactPhone` is rendered by the client from `BookingDetail`, never templated into a notification string, for the same reason a counterparty's phone never was.
 - Read via `GET /api/user/notifications` (**E-88**) and `POST /api/user/notifications/read` (**E-89**, body `{ ids?: ObjectId[] }` — omitted means "all unread").
   - **Both declare `scopeToActor('recipient')`**, mandatory and enforced by spec 03 `TR-05`, which fails the build for any `/api/user` route declaring neither a `guardIs*` nor `scopeToActor`. An earlier draft declared neither. E-89 additionally verifies every id in `ids[]` resolves to a notification whose `recipient` is the caller; a foreign id is `404`, never `403` (spec 02 §3.4 rule 2) — otherwise the endpoint is an existence oracle for other users' notification ids.
   - **Marking read is not a status write on a business entity** and does not engage AUTHZ-3: `readAt` is a timestamp, not a status enum, on an entity no state machine governs, with no `transition()` row and no audit. It is therefore **not** a tenth exception to spec 03's closed list — but it *is* a non-admin write under `/api/user`, so it is named here rather than left to be discovered. `Δ-B27`.

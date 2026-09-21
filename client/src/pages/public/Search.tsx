@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { listPublicCars, type PublicCarQuery, type SortOption } from '../../api/cars';
 import { PublicLayout } from './PublicLayout';
@@ -9,10 +9,29 @@ import { CarCardSkeleton } from '../../components/public/CarCardSkeleton';
 import { EmptyState } from '../../components/public/EmptyState';
 import { EMPTY_FILTERS, FilterChip, FilterPanel, hasActiveFilters, type FilterState } from '../../components/public/FilterPanel';
 import { useDebouncedValue } from '../../lib/useDebouncedValue';
+import { useIsMobile } from '../../lib/useIsMobile';
 import { Button } from '../../components/ui/Button';
 import { Select } from '../../components/ui/Select';
 import { Modal, ModalBody, ModalFooter } from '../../components/ui/Modal';
-import { ChevronLeftIcon, ChevronRightIcon, GearIcon, MapPinIcon, SearchIcon, SlidersIcon } from '../../components/ui/icons';
+import { cn } from '../../components/ui/cn';
+import { GearIcon, MapPinIcon, SearchIcon, SlidersIcon } from '../../components/ui/icons';
+
+// Compact page-number list: always the first/last page, the current page
+// and its immediate neighbors, with '…' filling any gap — rather than every
+// page number, which would overflow once there are more than a handful.
+function getPageNumbers(current: number, total: number): (number | 'ellipsis')[] {
+  const pages = new Set<number>([1, total, current, current - 1, current + 1]);
+  const sorted = [...pages].filter((p) => p >= 1 && p <= total).sort((a, b) => a - b);
+
+  const result: (number | 'ellipsis')[] = [];
+  let prev = 0;
+  for (const p of sorted) {
+    if (prev && p - prev > 1) result.push('ellipsis');
+    result.push(p);
+    prev = p;
+  }
+  return result;
+}
 
 const SORT_OPTIONS: { value: SortOption; label: string }[] = [
   { value: 'publishedAt:desc', label: 'Newest first' },
@@ -30,8 +49,8 @@ const FUEL_LABEL: Record<string, string> = {
   CNG: 'CNG',
 };
 
-function toQuery(filters: FilterState, sort: SortOption, page: number): PublicCarQuery {
-  const query: PublicCarQuery = { page, limit: 12, sort };
+function toQuery(filters: FilterState, sort: SortOption, page: number, limit: number): PublicCarQuery {
+  const query: PublicCarQuery = { page, limit, sort };
   if (filters.q) query.q = filters.q;
   if (filters.city) query.city = filters.city;
   if (filters.transmission.length) query.transmission = filters.transmission as ('MANUAL' | 'AUTOMATIC')[];
@@ -47,9 +66,23 @@ export function SearchPage() {
   const [sort, setSort] = useState<SortOption>('publishedAt:desc');
   const [page, setPage] = useState(1);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // Mobile only: 5 cars per page instead of 12, per its own pagination —
+  // desktop/tablet keep the existing 12-per-page behavior untouched.
+  const isMobile = useIsMobile();
+  const limit = isMobile ? 5 : 12;
+
+  // A resize across the mobile breakpoint changes the effective page size,
+  // which can leave `page` pointing past the new total — reset rather than
+  // risk requesting an empty page.
+  useEffect(() => {
+    setPage(1);
+  }, [isMobile]);
 
   const debouncedFilters = useDebouncedValue(filters, 350);
-  const query = useMemo(() => toQuery(debouncedFilters, sort, page), [debouncedFilters, sort, page]);
+  const query = useMemo(
+    () => toQuery(debouncedFilters, sort, page, limit),
+    [debouncedFilters, sort, page, limit],
+  );
 
   const { data, isLoading, isFetching, isError } = useQuery({
     queryKey: ['public-cars', 'search', query],
@@ -216,7 +249,7 @@ export function SearchPage() {
             {/* Results grid */}
             <div className="mt-6 grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
               {isLoading &&
-                Array.from({ length: 6 }).map((_, i) => <CarCardSkeleton key={i} />)}
+                Array.from({ length: limit }).map((_, i) => <CarCardSkeleton key={i} />)}
 
               {!isLoading && !isError && cars.map((car) => <CarCard key={car.id} car={car} />)}
             </div>
@@ -242,30 +275,54 @@ export function SearchPage() {
 
             {/* Pagination */}
             {meta && meta.totalPages > 1 && (
-              <div className="mt-8 flex items-center justify-center gap-3">
-                <button
-                  type="button"
-                  disabled={meta.page <= 1}
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  aria-label="Previous page"
-                  className="flex h-9 w-9 items-center justify-center rounded-sm border border-border-strong text-neutral-700 disabled:cursor-not-allowed disabled:text-neutral-300"
-                >
-                  <ChevronLeftIcon className="h-4 w-4" />
-                </button>
-                <span className="text-body-sm text-neutral-600">
-                  Page {meta.page} of {meta.totalPages}
-                  {isFetching && ' · updating…'}
-                </span>
-                <button
-                  type="button"
-                  disabled={!meta.hasNext}
-                  onClick={() => setPage((p) => p + 1)}
-                  aria-label="Next page"
-                  className="flex h-9 w-9 items-center justify-center rounded-sm border border-border-strong text-neutral-700 disabled:cursor-not-allowed disabled:text-neutral-300"
-                >
-                  <ChevronRightIcon className="h-4 w-4" />
-                </button>
-              </div>
+              <nav aria-label="Search results pages" className="mt-8 flex flex-col items-center gap-2">
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  <button
+                    type="button"
+                    disabled={meta.page <= 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    aria-label="Previous page"
+                    className="rounded-xl bg-surface-sunken px-4 py-2 text-body-sm font-medium text-neutral-400 transition-colors enabled:text-neutral-600 enabled:hover:bg-neutral-200 disabled:cursor-not-allowed"
+                  >
+                    ← Prev
+                  </button>
+
+                  {getPageNumbers(meta.page, meta.totalPages).map((item, i) =>
+                    item === 'ellipsis' ? (
+                      <span key={`ellipsis-${i}`} className="px-1 text-body-sm text-neutral-400">
+                        …
+                      </span>
+                    ) : (
+                      <button
+                        key={item}
+                        type="button"
+                        onClick={() => setPage(item)}
+                        aria-current={item === meta.page ? 'page' : undefined}
+                        aria-label={`Page ${item}`}
+                        className={cn(
+                          'flex h-9 min-w-9 items-center justify-center rounded-xl px-3 text-body-sm font-semibold transition-colors',
+                          item === meta.page
+                            ? 'bg-brand-accent text-neutral-0'
+                            : 'border border-border-strong bg-surface-card text-neutral-700 hover:bg-surface-sunken',
+                        )}
+                      >
+                        {item}
+                      </button>
+                    ),
+                  )}
+
+                  <button
+                    type="button"
+                    disabled={!meta.hasNext}
+                    onClick={() => setPage((p) => p + 1)}
+                    aria-label="Next page"
+                    className="rounded-xl bg-brand-accent-subtle px-4 py-2 text-body-sm font-semibold text-brand-primary transition-colors hover:bg-brand-accent/20 disabled:cursor-not-allowed disabled:bg-surface-sunken disabled:text-neutral-300"
+                  >
+                    Next →
+                  </button>
+                </div>
+                {isFetching && <p className="text-caption text-neutral-400">updating…</p>}
+              </nav>
             )}
           </div>
         </div>

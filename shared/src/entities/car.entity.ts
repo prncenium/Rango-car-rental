@@ -34,6 +34,9 @@ export const carEntitySchema = z.object({
   rentalPricePerDay: z.number().positive(),
   rentalPricePerWeek: z.number().positive().optional(),
   depositAmount: z.number().min(0).optional(),
+  // Charged per km once a booking's total distance driven exceeds
+  // `days * DAILY_DISTANCE_CAP_KM` (specs/04-business-logic.md §2.2a).
+  extraKmRatePerKm: z.number().min(0).optional(),
   moderationStatus: z.enum(CAR_MODERATION_STATUSES).default('DRAFT'),
   listingState: z.enum(CAR_LISTING_STATES).default('UNLISTED'),
   approvedBy: objectIdSchema.optional(),

@@ -9,6 +9,7 @@ import {
   clearNoShow,
   completeBooking,
   confirmBooking,
+  getRentalAgreementPdf,
   markNoShow,
   rejectBooking,
   terminateBooking,
@@ -57,6 +58,18 @@ router.get('/:bookingId', async (req, res, next) => {
     const { bookingId } = bookingIdParams.parse(req.params);
     const booking = await adminGetBookingDetail(bookingId);
     res.status(200).json({ data: booking });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/:bookingId/agreement', async (req, res, next) => {
+  try {
+    const { bookingId } = bookingIdParams.parse(req.params);
+    const pdfBytes = await getRentalAgreementPdf(bookingId, req.actor!);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="rental-agreement-${bookingId}.pdf"`);
+    res.status(200).send(Buffer.from(pdfBytes));
   } catch (err) {
     next(err);
   }

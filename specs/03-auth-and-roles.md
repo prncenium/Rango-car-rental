@@ -626,7 +626,7 @@ Every user has a licence on file by construction (§5.5), so there is nothing to
 |---|---|
 | Public / `GUEST` | Nothing. Never serialised into any `/api/public` response. |
 | The user themselves (E-05, E-25) | `number` **masked to the last 4 characters** (`XXXXXXXX4721`), plus `imageUrl`, `imageBackUrl`, `expiryDate`, `enteredAt`. Masking the value back to its own owner adds nothing they do not know and turns any XSS or log leak into a disclosure. |
-| The counterparty on a booking | **Nothing.** `PartyContact` (spec 02 §7.2) is `{ id, name, phone? }` and gains no licence field. An owner does not get the renter's licence number through the API; they see the physical document at handover. |
+| The counterparty on a booking | **Nothing.** `PartyContact` (spec 02 §7.2, amended 2026-09-21) is `{ id, name }` — no `phone`, and it never gains a licence field. An owner does not get the renter's licence number through the API. Whether the owner still sees the physical document in person at all depends on the godown handover model (spec 04 §4.3 OQ-NEW-2, unresolved) — under the godown model it may be the **admin**, not the owner, who compares the physical licence at pickup. |
 | `ADMIN` / `SUPER_ADMIN` (E-57, E-58, `AdminBookingDetail`) | `number` in full, plus images. |
 
 Two constraints carried over from the removed KYC section because they still apply to a licence number:
@@ -1263,6 +1263,14 @@ A single `SystemConfig` document (`_id: 'singleton'`) — `Δ-15`, a new entity 
 | `security.accessTokenTtlMinutes` | int | `15` | Bounded 5–60; out of range rejected |
 | `listing.maxImagesPerCar` | int | `12` | |
 | `platform.registrationOpen` | bool | `true` | Emergency switch: `false` → E-01 returns `503 SERVICE_UNAVAILABLE` |
+| `logistics.godownAddress` | string | *(none — required before launch)* | Free-text street address of the single central godown, spec 04 §4.2 `GodownInfo.address` |
+| `logistics.godownCity` | string | *(none)* | `GodownInfo.city` |
+| `logistics.godownState` | string | *(none)* | `GodownInfo.state` |
+| `logistics.godownPincode` | string | *(none)* | `GodownInfo.pincode` |
+| `logistics.godownContactPhone` | string | *(none)* | `GodownInfo.contactPhone` — the godown's own line, never a party's personal number |
+| `logistics.godownInstructions` | string | `""` *(optional)* | `GodownInfo.instructions` — e.g. gate/landmark notes, shown alongside the address |
+
+**Amendment 2026-09-21 — godown-mediated handover (spec 04 §4).** The six `logistics.godown*` keys above are new, added to support the single-godown pickup model that replaces per-booking contact reveal. Unlike every other key in this table, they have **no safe default** — an empty godown address would mean `RULE GH-2` discloses nothing useful to a confirmed renter, which is worse than the old contact-reveal gap it replaces. **OPEN QUESTION OQ-NEW-3:** should `E-72` (`PATCH /api/superadmin/config`) reject a booking-confirm attempt (E-39) while any `logistics.godown*` key is unset, or is it acceptable to ship with these blank and let `pickup` render as an empty/placeholder block until an admin fills them in? This document assumes **no hard guard** — an unset godown address is an operational gap the admin is expected to close before the first confirm, not a system invariant enforced in code — but flags it as a real launch-readiness risk distinct from a normal config default.
 
 **All `kyc.*` keys from the previous draft are removed** — `kyc.requireDrivingLicenceToRent` and `kyc.requiredToSubmitListing` both described gates that no longer exist.
 

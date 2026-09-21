@@ -256,12 +256,13 @@ function BlockDatesModal({
   isSubmitting: boolean;
   defaultFrom: string;
 }) {
+  const DEFAULT_REASON = 'Car is already booked';
   const [from, setFrom] = useState(defaultFrom);
   const [to, setTo] = useState(defaultFrom);
-  const [reason, setReason] = useState('');
+  const [reason, setReason] = useState(DEFAULT_REASON);
 
   function handleClose() {
-    setReason('');
+    setReason(DEFAULT_REASON);
     onClose();
   }
 

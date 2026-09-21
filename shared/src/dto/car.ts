@@ -50,6 +50,7 @@ export const createCarDto = z
     rentalPricePerDay: z.number().positive(),
     rentalPricePerWeek: z.number().positive().optional(),
     depositAmount: z.number().min(0).optional(),
+    extraKmRatePerKm: z.number().min(0).optional(),
   })
   .refine((v) => v.rentalPricePerWeek === undefined || v.rentalPricePerWeek < v.rentalPricePerDay * 7, {
     message: 'rentalPricePerWeek must be less than 7x rentalPricePerDay',
@@ -79,6 +80,7 @@ export const updateCarDto = z
     rentalPricePerDay: z.number().positive().optional(),
     rentalPricePerWeek: z.number().positive().optional(),
     depositAmount: z.number().min(0).optional(),
+    extraKmRatePerKm: z.number().min(0).optional(),
   })
   .refine((v) => Object.keys(v).length > 0, { message: 'At least one field is required.' });
 export type UpdateCarDto = z.infer<typeof updateCarDto>;

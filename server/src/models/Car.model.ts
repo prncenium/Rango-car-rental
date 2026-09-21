@@ -31,6 +31,7 @@ export interface CarDoc {
   rentalPricePerDay: number;
   rentalPricePerWeek?: number;
   depositAmount?: number;
+  extraKmRatePerKm?: number;
   moderationStatus: CarModerationStatus;
   listingState: CarListingState;
   approvedBy?: Types.ObjectId;
@@ -71,6 +72,7 @@ export const CarSchema = new Schema<CarDoc>(
     rentalPricePerDay: { type: Number, required: true },
     rentalPricePerWeek: { type: Number },
     depositAmount: { type: Number },
+    extraKmRatePerKm: { type: Number },
     moderationStatus: {
       type: String,
       enum: CAR_MODERATION_STATUSES,

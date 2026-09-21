@@ -6,7 +6,7 @@ import { AdminShell } from '../../components/admin/AdminShell';
 import { EmptyState } from '../../components/public/EmptyState';
 import { Button, Select, Table, TableBody, TableCell, TableHead, TableHeaderCell, TableRow } from '../../components/ui';
 import { Modal, ModalBody, ModalFooter } from '../../components/ui/Modal';
-import { getAuditLog, type AuditLogEntry } from '../../api/admin';
+import { auditActorDetailLabel, auditActorLabel, getAuditLog, type AuditLogEntry } from '../../api/admin';
 import { useQueueKeyboardNav } from '../../lib/useQueueKeyboardNav';
 import { cn } from '../../components/ui/cn';
 
@@ -272,7 +272,7 @@ function AuditLogViewer() {
                   <TableCell className="whitespace-nowrap text-caption text-neutral-600">
                     {new Date(entry.createdAt).toLocaleString('en-IN')}
                   </TableCell>
-                  <TableCell>{typeof entry.actor === 'string' ? entry.actor : entry.actor.name}</TableCell>
+                  <TableCell>{auditActorLabel(entry.actor)}</TableCell>
                   <TableCell className="font-medium text-neutral-900">{entry.action}</TableCell>
                   <TableCell className="text-neutral-600">
                     {entry.entityType} #{entry.entityId.slice(-6)}
@@ -334,10 +334,7 @@ function AuditEntryDetailModal({ entry, onClose }: { entry: AuditLogEntry | null
         {entry && (
           <dl className="space-y-3 text-body-sm">
             <DetailRow label="When" value={new Date(entry.createdAt).toISOString()} mono />
-            <DetailRow
-              label="Who"
-              value={`${typeof entry.actor === 'string' ? entry.actor : `${entry.actor.name} (${entry.actor.email})`} — role: ${entry.actorRole}`}
-            />
+            <DetailRow label="Who" value={`${auditActorDetailLabel(entry.actor)} — role: ${entry.actorRole}`} />
             <DetailRow label="What" value={entry.action} />
             <DetailRow label="Entity" value={`${entry.entityType} #${entry.entityId}`} mono />
             <DetailRow

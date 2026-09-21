@@ -104,6 +104,11 @@ describe('User endpoints (/api/user/*)', () => {
       expect(res.status).toBe(200);
       expect(res.body.data.length).toBe(1);
       expect(res.body.data[0].owner).toBe(String(user._id));
+      // Regression: client/src/api/listings.ts's OwnCar type expects `id`
+      // (not just `_id`) — every My Listings row used it as its React key,
+      // so a missing `id` produced "each child in a list should have a
+      // unique key" plus a stale-props risk across re-renders.
+      expect(res.body.data[0].id).toBe(res.body.data[0]._id);
     });
 
     it('updates a DRAFT listing owned by the caller; a non-owner gets 404', async () => {
@@ -166,6 +171,7 @@ describe('User endpoints (/api/user/*)', () => {
         depositSnapshot: 0,
         quotedTotalAmount: 2000,
         totalAmount: 2000,
+        termsAcceptedAt: new Date(),
         status: 'REQUESTED',
       });
 
@@ -182,6 +188,7 @@ describe('User endpoints (/api/user/*)', () => {
       const own = await request(app).get(`/api/user/listings/${car._id}`).set('Cookie', [`rgo_at=${token}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN);
       expect(own.status).toBe(200);
       expect(own.body.data.owner).toBe(String(user._id));
+      expect(own.body.data.id).toBe(String(car._id));
 
       const notOwned = await request(app).get(`/api/user/listings/${car._id}`).set('Cookie', [`rgo_at=${otherToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN);
       expect(notOwned.status).toBe(404);
@@ -278,7 +285,7 @@ describe('User endpoints (/api/user/*)', () => {
       const res = await request(app)
         .post('/api/user/bookings')
         .set('Cookie', [`rgo_at=${renterToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
-        .send({ carId: String(car._id), startDate: fmt(startDate), endDate: fmt(endDate) });
+        .send({ carId: String(car._id), startDate: fmt(startDate), endDate: fmt(endDate), agreedToTerms: true });
       expect(res.status).toBe(201);
       expect(res.body.data.status).toBe('REQUESTED');
       expect(res.body.data.ratePerDaySnapshot).toBe(1200);
@@ -292,7 +299,7 @@ describe('User endpoints (/api/user/*)', () => {
       const selfRental = await request(app)
         .post('/api/user/bookings')
         .set('Cookie', [`rgo_at=${ownerToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
-        .send({ carId: String(car._id), startDate: fmt(startDate), endDate: fmt(endDate) });
+        .send({ carId: String(car._id), startDate: fmt(startDate), endDate: fmt(endDate), agreedToTerms: true });
       expect(selfRental.status).toBe(409);
       expect(selfRental.body.error.details.guard).toBe('guardNotOwnRental');
     });
@@ -311,7 +318,7 @@ describe('User endpoints (/api/user/*)', () => {
       const res = await request(app)
         .post('/api/user/bookings')
         .set('Cookie', [`rgo_at=${renterToken}`, `rgo_csrf=${CSRF_TOKEN}`]).set('X-CSRF-Token', CSRF_TOKEN)
-        .send({ carId: String(car._id), startDate: fmt(startDate), endDate: fmt(endDate) });
+        .send({ carId: String(car._id), startDate: fmt(startDate), endDate: fmt(endDate), agreedToTerms: true });
       expect(res.status).toBe(404);
     });
 
@@ -334,6 +341,7 @@ describe('User endpoints (/api/user/*)', () => {
         depositSnapshot: 0,
         quotedTotalAmount: 2000,
         totalAmount: 2000,
+        termsAcceptedAt: new Date(),
         status: 'REQUESTED',
       });
 
@@ -369,6 +377,7 @@ describe('User endpoints (/api/user/*)', () => {
         depositSnapshot: 0,
         quotedTotalAmount: 2000,
         totalAmount: 2000,
+        termsAcceptedAt: new Date(),
         status: 'REQUESTED',
       });
 
@@ -397,6 +406,7 @@ describe('User endpoints (/api/user/*)', () => {
         depositSnapshot: 0,
         quotedTotalAmount: 2000,
         totalAmount: 2000,
+        termsAcceptedAt: new Date(),
         status: 'CONFIRMED',
       });
       const confirmedAttempt = await request(app)

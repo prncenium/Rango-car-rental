@@ -62,6 +62,7 @@ export interface CreateListingInput {
   rentalPricePerDay: number;
   rentalPricePerWeek?: number | undefined;
   depositAmount?: number | undefined;
+  extraKmRatePerKm?: number | undefined;
 }
 
 // spec 02 E-09 — a private DRAFT is not a state transition anyone needs to
@@ -93,6 +94,7 @@ export interface UpdateListingInput {
   rentalPricePerDay?: number | undefined;
   rentalPricePerWeek?: number | undefined;
   depositAmount?: number | undefined;
+  extraKmRatePerKm?: number | undefined;
 }
 
 // spec 02 E-10 — confined to DRAFT/REJECTED by guardEditableModerationState,
@@ -113,7 +115,10 @@ export async function updateListing(carId: string, actor: ActorContext, input: U
 
       const changingRegistration = input.registrationNumber !== undefined && input.registrationNumber !== car.registrationNumber;
       const changingPrice =
-        input.rentalPricePerDay !== undefined || input.rentalPricePerWeek !== undefined || input.depositAmount !== undefined;
+        input.rentalPricePerDay !== undefined ||
+        input.rentalPricePerWeek !== undefined ||
+        input.depositAmount !== undefined ||
+        input.extraKmRatePerKm !== undefined;
 
       Object.assign(car, input);
 
@@ -267,7 +272,7 @@ export async function getOwnListing(carId: string, actor: ActorContext) {
     .sort({ createdAt: -1 })
     .select('startDate endDate days ratePerDaySnapshot totalAmount amountReceived status createdAt')
     .lean();
-  return { ...car, bookings };
+  return { ...toAdminCarDto(car), bookings };
 }
 
 // spec 02 E-11 (exception E1) / CAR-08, CAR-09 — DRAFT|REJECTED ->
@@ -398,8 +403,33 @@ export async function listOwnListings(actor: ActorContext, query: ListOwnListing
   ]);
 
   return {
-    data,
+    data: data.map(toAdminCarDto),
     meta: { page, limit, total, totalPages: Math.ceil(total / limit), hasNext: page * limit < total, sort: sortKey },
+  };
+}
+
+// The admin car list/detail responses are `.lean()` plain objects — no `id`
+// virtual the way a hydrated Mongoose document would carry one — but the
+// client's AdminCar/AdminCarOwner types (client/src/api/admin.ts) expect an
+// `id` field, matching the convention publicCar.service.ts's toPublicCarSummary
+// already uses (`id: String(car._id)`). Without this, `car.id` is `undefined`
+// on every admin listings/calendar screen, producing `GET
+// /api/admin/listings/undefined`. Adds `id` alongside `_id` rather than
+// replacing it, so nothing that already reads `_id` (e.g. the test suite) breaks.
+function toAdminCarDto<T extends { _id: unknown; owner?: unknown }>(car: T) {
+  const owner = car.owner as ({ _id: unknown } & Record<string, unknown>) | undefined;
+  // `owner` is only a plain object worth mapping when `.populate('owner', ...)`
+  // actually ran (adminListListings/adminGetListing) — an *unpopulated* owner
+  // field (listOwnListings/getOwnListing, which never populate it) is still a
+  // raw ObjectId, and `typeof` on that is also 'object'. Spreading an
+  // ObjectId instance destructures its internal buffer instead of preserving
+  // its string representation, corrupting the field — so this checks for a
+  // populated shape specifically (has a `name`) rather than just "is an object".
+  const isPopulated = owner && typeof owner === 'object' && 'name' in owner;
+  return {
+    ...car,
+    id: String(car._id),
+    ...(isPopulated ? { owner: { ...owner, id: String(owner._id) } } : {}),
   };
 }
 
@@ -447,7 +477,7 @@ export async function adminListListings(query: AdminListListingsQuery) {
   ]);
 
   return {
-    data,
+    data: data.map(toAdminCarDto),
     meta: { page, limit, total, totalPages: Math.ceil(total / limit), hasNext: page * limit < total, sort: sortKey },
   };
 }
@@ -470,7 +500,7 @@ export async function adminGetListing(carId: string) {
   ]);
 
   return {
-    ...car,
+    ...toAdminCarDto(car),
     activeBookingId: activeBooking?._id ?? null,
     lockedDayCount,
   };

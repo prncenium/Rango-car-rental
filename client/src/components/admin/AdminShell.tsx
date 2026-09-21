@@ -1,11 +1,12 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { getCurrentUser, logout } from '../../api/auth.api';
 import { getDashboardCounts } from '../../api/admin';
 import { useAuthStore } from '../../store/auth.store';
 import { cn } from '../ui/cn';
+import { MenuIcon, XIcon } from '../ui/icons';
 
 // Admin layout per spec 05.5 §0.7's sidebar wireframe and §7 (docs/design
 // §7) — desktop-first: persistent sidebar from `lg` (1024px) up, collapsible
@@ -26,6 +27,7 @@ const NAV_ITEMS = [
 export function AdminShell({ children }: { children: ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const status = useAuthStore((state) => state.status);
   const user = useAuthStore((state) => state.user);
   const setUser = useAuthStore((state) => state.setUser);
@@ -43,6 +45,11 @@ export function AdminShell({ children }: { children: ReactNode }) {
       navigate(`/login?next=${encodeURIComponent(location.pathname)}`, { replace: true });
     }
   }, [status, location.pathname, navigate]);
+
+  // Close the mobile nav panel on navigation, same as PublicHeader's menu.
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [location.pathname]);
 
   const isAdmin = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
 
@@ -83,10 +90,10 @@ export function AdminShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen bg-surface-page">
       <aside className="hidden w-64 shrink-0 flex-col bg-brand-primary px-3 py-4 text-neutral-0 lg:flex">
-        <div className="flex items-center gap-2 px-2 pb-4">
+        <Link to="/" className="flex items-center gap-2 px-2 pb-4">
           <img src="/logo.png" alt="Rango Car Rental" className="h-7 w-auto" />
           <span className="text-caption font-medium uppercase tracking-wide text-neutral-0/70">Admin</span>
-        </div>
+        </Link>
         <nav className="flex flex-1 flex-col gap-1">
           {NAV_ITEMS.map((item) => {
             const count = item.countKey ? counts?.queues[item.countKey] : undefined;
@@ -103,6 +110,12 @@ export function AdminShell({ children }: { children: ReactNode }) {
           })}
         </nav>
         <div className="mt-4 border-t border-neutral-0/15 px-2 pt-4">
+          <Link
+            to="/"
+            className="mb-3 block text-body-sm text-neutral-0/70 hover:text-neutral-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus-ring focus-visible:outline-offset-2"
+          >
+            ← Back to website
+          </Link>
           <p className="truncate text-body-sm text-neutral-0/85">{user?.name}</p>
           <button
             type="button"
@@ -114,26 +127,54 @@ export function AdminShell({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
-      {/* Below `lg`: a top bar with the same nav, collapsing per docs/design/03-design-system.md §7 */}
-      <header className="fixed inset-x-0 top-0 z-20 flex h-14 items-center justify-between border-b border-border bg-brand-primary px-4 text-neutral-0 lg:hidden">
-        <div className="flex items-center gap-1.5">
-          <img src="/logo.png" alt="Rango Car Rental" className="h-6 w-auto" />
-          <span className="text-caption font-medium uppercase tracking-wide text-neutral-0/70">Admin</span>
-        </div>
-        <nav className="flex items-center gap-3">
-          {NAV_ITEMS.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) => cn('text-body-sm', isActive ? 'text-brand-accent' : 'text-neutral-0/80')}
-            >
-              {item.label}
-            </NavLink>
-          ))}
-          <button type="button" onClick={handleLogout} className="text-body-sm text-neutral-0/70">
-            Log out
+      {/* Below `lg`: a hamburger-collapsed top bar, same pattern as
+          PublicHeader's mobile menu — the previous version crammed all six
+          nav items plus Website/Log out into one unwrapping flex row, which
+          overflowed and overlapped the logo on any real phone width. */}
+      <header className="fixed inset-x-0 top-0 z-20 border-b border-border bg-brand-primary text-neutral-0 lg:hidden">
+        <div className="flex h-14 items-center justify-between px-4">
+          <Link to="/" className="flex items-center gap-1.5" onClick={() => setMobileNavOpen(false)}>
+            <img src="/logo.png" alt="Rango Car Rental" className="h-6 w-auto" />
+            <span className="text-caption font-medium uppercase tracking-wide text-neutral-0/70">Admin</span>
+          </Link>
+          <button
+            type="button"
+            aria-label={mobileNavOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={mobileNavOpen}
+            className="p-2 text-neutral-0"
+            onClick={() => setMobileNavOpen((v) => !v)}
+          >
+            {mobileNavOpen ? <XIcon className="h-6 w-6" /> : <MenuIcon className="h-6 w-6" />}
           </button>
-        </nav>
+        </div>
+
+        {mobileNavOpen && (
+          <div className="max-h-[calc(100vh-3.5rem)] overflow-y-auto border-t border-neutral-0/10 px-4 pb-4">
+            <nav className="flex flex-col gap-1 pt-2">
+              {NAV_ITEMS.map((item) => {
+                const count = item.countKey ? counts?.queues[item.countKey] : undefined;
+                return (
+                  <NavLink key={item.to} to={item.to} className={navLinkClass}>
+                    <span>{item.label}</span>
+                    {typeof count === 'number' && count > 0 && (
+                      <span className="rounded-full bg-brand-accent px-2 py-0.5 text-caption font-semibold text-neutral-0">
+                        {count}
+                      </span>
+                    )}
+                  </NavLink>
+                );
+              })}
+            </nav>
+            <div className="mt-2 flex items-center justify-between border-t border-neutral-0/15 pt-3">
+              <Link to="/" className="text-body-sm text-neutral-0/70 hover:text-neutral-0">
+                ← Back to website
+              </Link>
+              <button type="button" onClick={handleLogout} className="text-body-sm text-neutral-0/70 hover:text-neutral-0">
+                Log out
+              </button>
+            </div>
+          </div>
+        )}
       </header>
 
       <main className="min-w-0 flex-1 pt-14 lg:pt-0">

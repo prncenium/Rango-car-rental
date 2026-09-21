@@ -1,4 +1,5 @@
 import { useRef } from 'react';
+import type { ReactNode } from 'react';
 import { motion, useReducedMotion, useScroll, useTransform } from 'framer-motion';
 
 // Reusable scroll-driven zoom hero: a tall (200vh) wrapper holds a `sticky`
@@ -21,15 +22,24 @@ const INSET_SCALE = 0.85;
 const INSET_RADIUS_PX = 10; // radius-lg, docs/design/03-design-system.md §5
 const INSET_MARGIN_PX = 32; // space-8, docs/design/03-design-system.md §4
 
+export interface ScrollZoomHeroStat {
+  value: string;
+  label: string;
+}
+
 export interface ScrollZoomHeroProps {
   imageUrl: string;
   imageAlt: string;
   eyebrow?: string;
   heading?: string;
   body?: string;
+  /** Buttons/links rendered below the body copy — the section reads as empty without a next step. */
+  actions?: ReactNode;
+  /** Small trust/stat row rendered below actions, e.g. "Admin-approved · Godown pickup · No online payment". */
+  stats?: ScrollZoomHeroStat[];
 }
 
-export function ScrollZoomHero({ imageUrl, imageAlt, eyebrow, heading, body }: ScrollZoomHeroProps) {
+export function ScrollZoomHero({ imageUrl, imageAlt, eyebrow, heading, body, actions, stats }: ScrollZoomHeroProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const reducedMotion = useReducedMotion();
   const { scrollYProgress } = useScroll({
@@ -45,14 +55,25 @@ export function ScrollZoomHero({ imageUrl, imageAlt, eyebrow, heading, body }: S
     <div className="absolute inset-0 flex items-center">
       <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
         {eyebrow && (
-          <p className="text-caption font-medium uppercase tracking-[0.2em] text-brand-accent">{eyebrow}</p>
+          <p className="text-body-md font-medium uppercase tracking-[0.2em] text-brand-accent">{eyebrow}</p>
         )}
         {heading && (
-          <h2 className="mt-4 max-w-xl font-display text-display-lg text-neutral-0 sm:text-display-xl">
+          <h2 className="mt-4 max-w-2xl font-display text-display-lg text-neutral-0 sm:text-display-xl">
             {heading}
           </h2>
         )}
-        {body && <p className="mt-5 max-w-md text-body-lg text-neutral-200">{body}</p>}
+        {body && <p className="mt-5 max-w-lg text-heading-sm font-normal text-neutral-200">{body}</p>}
+        {actions && <div className="mt-8 flex flex-wrap gap-3">{actions}</div>}
+        {stats && stats.length > 0 && (
+          <dl className="mt-10 flex max-w-lg flex-wrap gap-x-10 gap-y-4 border-t border-neutral-0/15 pt-6">
+            {stats.map((stat) => (
+              <div key={stat.label}>
+                <dt className="font-display text-heading-md text-neutral-0">{stat.value}</dt>
+                <dd className="mt-1 text-body-sm text-neutral-300">{stat.label}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
       </div>
     </div>
   );

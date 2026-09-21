@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { AdminShell } from '../../components/admin/AdminShell';
 import { EmptyState } from '../../components/public/EmptyState';
-import { getAuditLog, getDashboardCounts, adminListListings } from '../../api/admin';
+import { auditActorLabel, getAuditLog, getDashboardCounts, adminListListings } from '../../api/admin';
 import { AlertTriangleIcon } from '../../components/ui/icons';
 
 export function AdminDashboardPage() {
@@ -125,7 +125,7 @@ function Dashboard() {
                   <span className="font-mono text-mono-sm text-neutral-500">
                     {new Date(entry.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                   </span>
-                  <span className="text-neutral-700">{typeof entry.actor === 'string' ? entry.actor : entry.actor.name}</span>
+                  <span className="text-neutral-700">{auditActorLabel(entry.actor)}</span>
                   <span className="font-medium text-neutral-900">{entry.action}</span>
                   <span className="text-neutral-500">
                     {entry.entityType} #{entry.entityId.slice(-6)}

@@ -32,6 +32,12 @@ export interface PublicCarDetail extends PublicCarSummary {
   description?: string;
   images: string[];
   location: { city: string; state: string; geo?: { type: 'Point'; coordinates: [number, number] } };
+  // Detail-only (not on PublicCarSummary) — needed for the acknowledgement
+  // preview on the Booking Request page, shown before a renter agrees to the T&Cs.
+  depositAmount: number;
+  // ₹/km charged once total distance driven exceeds days × 300km (the daily
+  // distance cap — specs/04-business-logic.md §2.2a).
+  extraKmRatePerKm: number;
 }
 
 // AvailabilityResponse (spec 02 §7.2) — GET /api/public/cars/:carId/availability

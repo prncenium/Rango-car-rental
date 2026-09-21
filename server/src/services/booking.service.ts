@@ -1,4 +1,5 @@
 import mongoose, { type ClientSession, type FilterQuery, type HydratedDocument } from 'mongoose';
+import { DAILY_DISTANCE_CAP_KM } from '@rango/shared';
 import type { ActorContext } from '../lib/actor.js';
 import { isAdminActor } from '../lib/actor.js';
 import { ForbiddenTransitionError, GuardFailedError, InvalidTransitionError, NotFoundError, ValidationError } from '../lib/errors.js';
@@ -12,6 +13,23 @@ import { toUtcMidnight } from '../lib/dayLocks.js';
 import { getBookingConfig } from '../lib/systemConfig.js';
 import { transition, transitionWithEdge } from '../transitions/transition.js';
 import { bookingRegistry, bookingActivateUnpaidEdge } from '../transitions/registry.js';
+import { generateRentalAgreementPdf } from '../lib/rentalAgreement.js';
+
+// Available as soon as a request is made (all the fields it needs — renter
+// profile, car, dates, deposit — already exist at REQUESTED, and the
+// customer acknowledgement/checkbox is captured at that same moment) through
+// every status the booking can still reach afterward. Only a booking that
+// never had agreed dates in the first place (REJECTED, CANCELLED-from-REQUESTED)
+// has nothing to put in a document.
+const AGREEMENT_ELIGIBLE_STATUSES: BookingDoc['status'][] = [
+  'REQUESTED',
+  'CONFIRMED',
+  'CANCELLATION_REQUESTED',
+  'ACTIVE',
+  'COMPLETED',
+  'TERMINATED',
+  'NO_SHOW',
+];
 
 type BookingE = HydratedDocument<BookingDoc>;
 
@@ -183,6 +201,23 @@ export async function completeBooking(
       if (params.conditionNote) {
         booking.conditionNote = params.conditionNote;
       }
+
+      // spec 04 §2.2a — distance driven beyond `days * DAILY_DISTANCE_CAP_KM`
+      // is billed at the car's extraKmRatePerKm, snapshotted here (mirrors
+      // ratePerDaySnapshot's request-time snapshot pattern) and added to
+      // totalAmount. Only computed when both odometer readings exist.
+      if (typeof booking.odometerOut === 'number' && typeof booking.odometerIn === 'number') {
+        const car = await Car.findById(booking.car).session(session);
+        const rate = car?.extraKmRatePerKm ?? 0;
+        const distanceDriven = Math.max(0, booking.odometerIn - booking.odometerOut);
+        const allowedKm = booking.days * DAILY_DISTANCE_CAP_KM;
+        const excessKm = Math.max(0, distanceDriven - allowedKm);
+        booking.excessKm = excessKm;
+        booking.excessKmRateSnapshot = rate;
+        booking.excessKmChargeAmount = excessKm * rate;
+        booking.totalAmount += booking.excessKmChargeAmount;
+      }
+
       result = await transition({
         registry: bookingRegistry,
         entityType: 'BOOKING',
@@ -338,6 +373,7 @@ export interface RequestBookingInput {
   carId: string;
   startDate: string; // YYYY-MM-DD
   endDate: string; // YYYY-MM-DD
+  agreedToTerms: boolean; // guaranteed true by the route's zod refine before this is ever called
 }
 
 // spec 02 E-17 / exception E4 — a creation, not an edge: there is no prior
@@ -492,6 +528,7 @@ export async function requestBooking(actor: ActorContext, input: RequestBookingI
             depositSnapshot,
             quotedTotalAmount: totalAmount,
             totalAmount,
+            termsAcceptedAt: new Date(),
             status: 'REQUESTED',
           },
         ],
@@ -687,7 +724,7 @@ export async function adminGetBookingDetail(bookingId: string) {
   const booking = await Booking.findById(bookingId)
     .populate('renter', 'name email phone drivingLicence')
     .populate('owner', 'name email phone')
-    .populate('car', 'make model registrationNumber location')
+    .populate('car', 'make model registrationNumber location extraKmRatePerKm')
     .lean();
   if (!booking) {
     throw new NotFoundError('Booking not found.');
@@ -762,4 +799,45 @@ export async function listOwnBookings(actor: ActorContext, query: ListOwnBooking
     data,
     meta: { page, limit, total, totalPages: Math.ceil(total / limit), hasNext: page * limit < total, sort: sortKey },
   };
+}
+
+// Renter side: scoped to the caller's own booking, 404 (never 403) if it
+// belongs to someone else, per spec 02 §3.4 rule 2. Admin side: any booking.
+// PDF is generated fresh on every call — see rentalAgreement.ts's own note
+// on why nothing is cached or persisted.
+export async function getRentalAgreementPdf(bookingId: string, actor: ActorContext): Promise<Uint8Array> {
+  const booking = await Booking.findById(bookingId)
+    .populate('renter', 'name phone drivingLicence')
+    .populate('car', 'make model year registrationNumber')
+    .lean();
+
+  if (!booking) {
+    throw new NotFoundError('Booking not found.');
+  }
+
+  const isAdmin = isAdminActor(actor);
+  const renter = booking.renter as unknown as { _id: mongoose.Types.ObjectId; name: string; phone: string; drivingLicence: { number: string } };
+  const car = booking.car as unknown as { make: string; model: string; year: number; registrationNumber: string };
+
+  if (!isAdmin && String(renter._id) !== String(actor.userId)) {
+    throw new NotFoundError('Booking not found.');
+  }
+
+  if (!AGREEMENT_ELIGIBLE_STATUSES.includes(booking.status)) {
+    throw new GuardFailedError('This booking has not been confirmed yet — there is nothing to put in a rental agreement.', {
+      guard: 'guardBookingConfirmedForAgreement',
+    });
+  }
+
+  return generateRentalAgreementPdf({
+    bookingId: String(booking._id),
+    customerName: renter.name,
+    mobileNumber: renter.phone,
+    drivingLicenceNumber: renter.drivingLicence.number,
+    vehicleRegistrationNumber: car.registrationNumber,
+    vehicleDescription: `${car.make} ${car.model} ${car.year}`,
+    rentalStartDate: booking.startDate.toISOString().slice(0, 10),
+    rentalReturnDate: booking.endDate.toISOString().slice(0, 10),
+    securityDeposit: booking.depositSnapshot,
+  });
 }

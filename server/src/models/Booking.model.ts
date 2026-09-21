@@ -32,6 +32,10 @@ export interface BookingDoc {
   totalAmount: number;
   lateFeeAmount: number;
 
+  excessKm: number;
+  excessKmRateSnapshot?: number;
+  excessKmChargeAmount: number;
+
   amountReceived: number;
   depositReceived: number;
   depositReturned: number;
@@ -41,6 +45,11 @@ export interface BookingDoc {
   depositDeductions: DepositDeduction[];
 
   conditionNote?: string;
+
+  // Digital "I agree to the Terms & Conditions" checkbox, captured at
+  // request time — separate from and in addition to the physical signature
+  // on the rental agreement PDF at godown handover (docs/legal/terms-and-conditions.md).
+  termsAcceptedAt: Date;
 
   status: BookingStatus;
 
@@ -119,6 +128,10 @@ export const BookingSchema = new Schema<BookingDoc>(
     totalAmount: { type: Number, required: true },
     lateFeeAmount: { type: Number, default: 0, required: true },
 
+    excessKm: { type: Number, default: 0, required: true },
+    excessKmRateSnapshot: { type: Number },
+    excessKmChargeAmount: { type: Number, default: 0, required: true },
+
     amountReceived: { type: Number, default: 0, required: true },
     depositReceived: { type: Number, default: 0, required: true },
     depositReturned: { type: Number, default: 0, required: true },
@@ -128,6 +141,8 @@ export const BookingSchema = new Schema<BookingDoc>(
     depositDeductions: { type: [DepositDeductionSchema], default: [] },
 
     conditionNote: { type: String },
+
+    termsAcceptedAt: { type: Date, required: true },
 
     status: { type: String, enum: BOOKING_STATUSES, default: 'REQUESTED', required: true },
 

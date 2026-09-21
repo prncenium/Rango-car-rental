@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { PaymentMethod, PaymentPurpose } from '@rango/shared';
-import { PAYMENT_METHODS } from '@rango/shared';
+import { DAILY_DISTANCE_CAP_KM, PAYMENT_METHODS } from '@rango/shared';
 import { AdminShell } from '../../components/admin/AdminShell';
 import { ConfirmReasonModal } from '../../components/admin/ConfirmReasonModal';
 import { Modal, ModalBody, ModalFooter } from '../../components/ui/Modal';
@@ -15,6 +15,7 @@ import {
   cancelBooking,
   confirmBooking,
   confirmOfflinePayment,
+  downloadBookingAgreement,
   markBookingActive,
   markBookingReturned,
   markNoShow,
@@ -70,17 +71,30 @@ function errorToastText(err: unknown): string {
   return 'Something went wrong. Please try again.';
 }
 
-function BookingDetail() {
+export function BookingDetail() {
   const { bookingId } = useParams<{ bookingId: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [activeAction, setActiveAction] = useState<ActionKind>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [downloadingAgreement, setDownloadingAgreement] = useState(false);
 
   function pushToast(variant: ToastMessage['variant'], text: string) {
     const id = Date.now();
     setToasts((prev) => [...prev, { id, variant, text }]);
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 6000);
+  }
+
+  async function handleDownloadAgreement() {
+    if (!bookingId) return;
+    setDownloadingAgreement(true);
+    try {
+      await downloadBookingAgreement(bookingId);
+    } catch (err) {
+      pushToast('danger', errorToastText(err));
+    } finally {
+      setDownloadingAgreement(false);
+    }
   }
 
   const detailQuery = useQuery({
@@ -89,8 +103,17 @@ function BookingDetail() {
     enabled: Boolean(bookingId),
   });
 
-  function onMutationSuccess(updated: AdminBookingDetail, successText: string) {
-    queryClient.setQueryData(['admin-booking', bookingId], updated);
+  // The mutation endpoints (confirm/reject/cancel/...) return the raw
+  // Booking document — none of `payments[]`, `dayLocks`, or the populated
+  // car/renter/owner that only adminGetBooking's detail read assembles.
+  // Overwriting the cache with that leaner shape (as this used to do) left
+  // `booking.payments` undefined right after a successful action, crashing
+  // on `booking.payments.length` below. Invalidating instead lets the
+  // detail query refetch the real AdminBookingDetail shape — onMutate's
+  // optimistic status patch (still the correct full shape, just with one
+  // field pre-updated) covers the UI in the moment before that refetch lands.
+  function onMutationSuccess(successText: string) {
+    queryClient.invalidateQueries({ queryKey: ['admin-booking', bookingId] });
     queryClient.invalidateQueries({ queryKey: ['admin-bookings'] });
     queryClient.invalidateQueries({ queryKey: ['admin-dashboard-counts'] });
     pushToast('success', successText);
@@ -116,48 +139,47 @@ function BookingDetail() {
   const confirmMutation = useMutation({
     mutationFn: () => confirmBooking(bookingId!),
     onMutate: () => onMutate({ status: 'CONFIRMED' }),
-    onSuccess: (b) =>
-      onMutationSuccess(b, "Confirmed. Both parties can now see each other's phone number."),
+    onSuccess: () => onMutationSuccess("Confirmed. Both parties can now see each other's phone number."),
     onError: onMutationError,
   });
 
   const rejectMutation = useMutation({
     mutationFn: (reason: string) => rejectBooking(bookingId!, reason),
     onMutate: () => onMutate({ status: 'REJECTED' }),
-    onSuccess: (b) => onMutationSuccess(b, 'Booking request rejected.'),
+    onSuccess: () => onMutationSuccess('Booking request rejected.'),
     onError: onMutationError,
   });
 
   const cancelMutation = useMutation({
     mutationFn: (reason: string) => cancelBooking(bookingId!, reason),
     onMutate: () => onMutate({ status: 'CANCELLED' }),
-    onSuccess: (b) => onMutationSuccess(b, 'Booking cancelled.'),
+    onSuccess: () => onMutationSuccess('Booking cancelled.'),
     onError: onMutationError,
   });
 
   const noShowMutation = useMutation({
     mutationFn: (reason: string) => markNoShow(bookingId!, reason),
     onMutate: () => onMutate({ status: 'NO_SHOW' }),
-    onSuccess: (b) => onMutationSuccess(b, 'Marked as a no-show. New requests from this renter are blocked until cleared.'),
+    onSuccess: () => onMutationSuccess('Marked as a no-show. New requests from this renter are blocked until cleared.'),
     onError: onMutationError,
   });
 
   const paymentMutation = useMutation({
     mutationFn: (input: { amount: number; paymentMethod: PaymentMethod; purpose: PaymentPurpose; referenceNote?: string }) =>
       confirmOfflinePayment(bookingId!, input),
-    onSuccess: ({ booking }) => onMutationSuccess(booking, 'Payment recorded and settled.'),
+    onSuccess: () => onMutationSuccess('Payment recorded and settled.'),
     onError: onMutationError,
   });
 
   const activateMutation = useMutation({
     mutationFn: (input: { odometerOut?: number; overrideReason?: string }) => markBookingActive(bookingId!, input),
-    onSuccess: (b) => onMutationSuccess(b, 'Handover complete. The rental is now active.'),
+    onSuccess: () => onMutationSuccess('Handover complete. The rental is now active.'),
     onError: onMutationError,
   });
 
   const completeMutation = useMutation({
     mutationFn: (input: { odometerIn?: number; conditionNote?: string }) => markBookingReturned(bookingId!, input),
-    onSuccess: (b) => onMutationSuccess(b, 'Rental completed.'),
+    onSuccess: () => onMutationSuccess('Rental completed.'),
     onError: onMutationError,
   });
 
@@ -195,6 +217,10 @@ function BookingDetail() {
   const canActivate = booking.status === 'CONFIRMED';
   const canComplete = booking.status === 'ACTIVE';
   const canMarkNoShow = booking.status === 'CONFIRMED';
+  // Mirrors server/src/services/booking.service.ts's AGREEMENT_ELIGIBLE_STATUSES.
+  const canDownloadAgreement = (
+    ['REQUESTED', 'CONFIRMED', 'CANCELLATION_REQUESTED', 'ACTIVE', 'COMPLETED', 'TERMINATED', 'NO_SHOW'] as string[]
+  ).includes(booking.status);
   const noActionsAvailable =
     !canConfirm && !canReject && !canCancel && !canRecordPayment && !canActivate && !canComplete && !canMarkNoShow;
 
@@ -211,7 +237,19 @@ function BookingDetail() {
           </h1>
           <p className="mt-1 font-mono text-mono-sm text-neutral-500">Booking #{booking._id.slice(-8)}</p>
         </div>
-        <Badge status={meta.badge}>{meta.label}</Badge>
+        <div className="flex items-center gap-3">
+          {canDownloadAgreement && (
+            <Button
+              variant="secondary"
+              size="sm"
+              isLoading={downloadingAgreement}
+              onClick={handleDownloadAgreement}
+            >
+              Download Rental Agreement
+            </Button>
+          )}
+          <Badge status={meta.badge}>{meta.label}</Badge>
+        </div>
       </div>
       <p className="mt-1 text-body-sm text-neutral-600">{meta.explain}</p>
 
@@ -245,6 +283,10 @@ function BookingDetail() {
               />
               {booking.odometerOut !== undefined && <Detail label="Odometer (out)" value={`${booking.odometerOut} km`} />}
               {booking.odometerIn !== undefined && <Detail label="Odometer (in)" value={`${booking.odometerIn} km`} />}
+              {!!booking.excessKm && <Detail label="Excess distance" value={`${booking.excessKm} km`} />}
+              {!!booking.excessKmChargeAmount && (
+                <Detail label="Excess km charge" value={`₹${booking.excessKmChargeAmount.toLocaleString('en-IN')}`} />
+              )}
             </dl>
             {booking.payments.length > 0 && (
               <div className="mt-4">
@@ -411,6 +453,8 @@ function BookingDetail() {
         onSubmit={(input) => completeMutation.mutate(input)}
         isSubmitting={completeMutation.isPending}
         odometerOut={booking.odometerOut}
+        days={booking.days}
+        extraKmRatePerKm={booking.car.extraKmRatePerKm}
       />
 
       <ToastViewport>
@@ -645,12 +689,16 @@ function CompleteBookingModal({
   onSubmit,
   isSubmitting,
   odometerOut,
+  days,
+  extraKmRatePerKm,
 }: {
   open: boolean;
   onClose: () => void;
   onSubmit: (input: { odometerIn?: number; conditionNote?: string }) => void;
   isSubmitting: boolean;
   odometerOut?: number | undefined;
+  days: number;
+  extraKmRatePerKm?: number | undefined;
 }) {
   const [odometerIn, setOdometerIn] = useState('');
   const [conditionNote, setConditionNote] = useState('');
@@ -668,6 +716,13 @@ function CompleteBookingModal({
   // enables, even though `conditionNote` is server-optional.
   const canSubmit = !odometerInvalid && conditionNote.trim().length > 0 && !isSubmitting;
 
+  const allowedKm = days * DAILY_DISTANCE_CAP_KM;
+  const excessKm =
+    odometerInNumber !== undefined && odometerOut !== undefined && !odometerInvalid
+      ? Math.max(0, odometerInNumber - odometerOut - allowedKm)
+      : 0;
+  const excessKmCharge = excessKm * (extraKmRatePerKm ?? 0);
+
   return (
     <Modal open={open} onClose={handleClose} title="Complete rental — mark returned">
       <ModalBody>
@@ -679,8 +734,14 @@ function CompleteBookingModal({
             value={odometerIn}
             onChange={(e) => setOdometerIn(e.target.value)}
             errorText={odometerInvalid ? `Can't be less than odometer-out (${odometerOut} km)` : undefined}
-            helperText={odometerOut !== undefined ? `Out was ${odometerOut} km` : undefined}
+            helperText={odometerOut !== undefined ? `Out was ${odometerOut} km · ${allowedKm} km included in this rental` : undefined}
           />
+          {excessKm > 0 && (
+            <p className="text-body-sm text-status-warning-fg">
+              {excessKm} km over the daily cap
+              {extraKmRatePerKm ? ` — excess km charge ₹${excessKmCharge.toLocaleString('en-IN')}` : ' (car has no extra-km rate set)'}
+            </p>
+          )}
           <Textarea
             label="Condition notes (required)"
             required

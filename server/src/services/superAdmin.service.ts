@@ -1,6 +1,6 @@
 import mongoose, { type ClientSession, type HydratedDocument, Types } from 'mongoose';
 import type { ActorContext } from '../lib/actor.js';
-import { InvalidTransitionError, NotFoundError, ValidationError } from '../lib/errors.js';
+import { ConflictError, InvalidTransitionError, NotFoundError, ValidationError } from '../lib/errors.js';
 import { User, type UserDoc } from '../models/User.model.js';
 import { Session } from '../models/Session.model.js';
 import { AuditLog } from '../models/AuditLog.model.js';
@@ -42,6 +42,84 @@ async function revokeAllSessions(userId: UserE['_id'], session: ClientSession): 
     { user: userId, status: 'ACTIVE' },
     { $set: { status: 'REVOKED', revokedReason: 'ADMIN_REVOKED' } },
   ).session(session);
+}
+
+export class SuperAdminAlreadyExistsError extends Error {
+  constructor(public readonly existingEmail: string) {
+    super(`a SUPER_ADMIN already exists (${existingEmail}).`);
+    this.name = 'SuperAdminAlreadyExistsError';
+  }
+}
+
+export interface SeedFirstSuperAdminInput {
+  name: string;
+  email: string;
+  phone: string;
+  passwordHash: string;
+  drivingLicenceNumber: string;
+}
+
+// spec 03 §11.1-11.2 — the first-run CLI bootstrap's actual write path,
+// factored out of server/src/scripts/seedSuperAdmin.ts (which owns only
+// argv parsing and the interactive masked password prompt) so it is
+// unit-testable without a TTY. Refuses to run if any SUPER_ADMIN already
+// exists (§11.2 item 1 — this is what makes it a bootstrap, not a permanent
+// backdoor) and writes a self-referential SUPER_ADMIN_SEEDED audit row
+// (§11.2 item 5 — a bootstrap has no prior actor).
+export async function seedFirstSuperAdmin(input: SeedFirstSuperAdminInput): Promise<UserE> {
+  const session = await mongoose.startSession();
+  try {
+    let result!: UserE;
+    await session.withTransaction(async () => {
+      const existingSuperAdmin = await User.findOne({ role: 'SUPER_ADMIN' }).session(session);
+      if (existingSuperAdmin) {
+        throw new SuperAdminAlreadyExistsError(existingSuperAdmin.email);
+      }
+      const existingEmail = await User.findOne({ email: input.email }).session(session);
+      if (existingEmail) {
+        throw new ConflictError('A user with this email already exists.', { field: 'email' });
+      }
+      const existingPhone = await User.findOne({ phone: input.phone }).session(session);
+      if (existingPhone) {
+        throw new ConflictError('A user with this phone number already exists.', { field: 'phone' });
+      }
+
+      const created = await User.create(
+        [
+          {
+            name: input.name,
+            email: input.email,
+            phone: input.phone,
+            passwordHash: input.passwordHash,
+            role: 'SUPER_ADMIN',
+            isActive: true,
+            failedLoginCount: 0,
+            drivingLicence: { number: input.drivingLicenceNumber, enteredAt: new Date() },
+          },
+        ],
+        { session },
+      );
+      const user = created[0]!;
+
+      await AuditLog.create(
+        [
+          {
+            actor: user._id,
+            actorRole: 'SUPER_ADMIN',
+            action: 'SUPER_ADMIN_SEEDED',
+            entityType: 'USER',
+            entityId: user._id,
+            newState: 'SUPER_ADMIN',
+          },
+        ],
+        { session },
+      );
+      result = user;
+    });
+    return result;
+  } finally {
+    await session.endSession();
+  }
 }
 
 // spec 03 §11.3 E-68 — USER -> ADMIN. Promotion is by userId only, never by

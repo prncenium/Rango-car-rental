@@ -32,6 +32,7 @@ export interface OwnCar {
   rentalPricePerDay: number;
   rentalPricePerWeek?: number;
   depositAmount?: number;
+  extraKmRatePerKm?: number;
   moderationStatus: CarModerationStatus;
   listingState: CarListingState;
   rejectionReason?: string;

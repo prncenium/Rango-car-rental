@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { BOOKING_STATUSES, objectIdSchema } from '@rango/shared';
-import { cancelOwnBookingRequest, listOwnBookings, requestBooking } from '../services/booking.service.js';
+import { cancelOwnBookingRequest, getRentalAgreementPdf, listOwnBookings, requestBooking } from '../services/booking.service.js';
 
 const router = Router();
 
@@ -14,6 +14,13 @@ const requestBookingBody = z.strictObject({
   carId: objectIdSchema,
   startDate: dateStringSchema,
   endDate: dateStringSchema,
+  // Digital "I agree to the Terms & Conditions" checkbox — required, must
+  // be exactly true (omitting it or sending false is a 400, not a silent
+  // false). Separate from the physical signature captured on the rental
+  // agreement PDF at godown handover.
+  agreedToTerms: z
+    .boolean()
+    .refine((v) => v === true, { message: 'You must agree to the Terms & Conditions to request a booking.' }),
 });
 
 // spec 02 E-18 — reason is optional here (unlike E-19's request-cancellation,
@@ -62,6 +69,21 @@ router.post('/:bookingId/cancel', async (req, res, next) => {
     const { reason } = cancelBody.parse(req.body);
     const booking = await cancelOwnBookingRequest(bookingId, req.actor!, reason);
     res.status(200).json({ data: booking });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// scopeToActor is enforced inside getRentalAgreementPdf itself (a foreign
+// booking is 404, never 403 — spec 02 §3.4 rule 2), same as every other
+// /api/user route in this file.
+router.get('/:bookingId/agreement', async (req, res, next) => {
+  try {
+    const { bookingId } = bookingIdParams.parse(req.params);
+    const pdfBytes = await getRentalAgreementPdf(bookingId, req.actor!);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="rental-agreement-${bookingId}.pdf"`);
+    res.status(200).send(Buffer.from(pdfBytes));
   } catch (err) {
     next(err);
   }

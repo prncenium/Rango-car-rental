@@ -41,6 +41,14 @@ function toPublicCarDetail(car: CarDoc & { _id: unknown }) {
     description: car.description,
     images: car.images,
     location: { city: car.location.city, state: car.location.state, geo: car.location.geo },
+    // Surfaced on the detail read only (not the list summary) — a renter
+    // reviewing the acknowledgement before requesting needs to know the
+    // deposit up front; mirrors server/src/services/booking.service.ts's own
+    // `depositSnapshot = car.depositAmount ?? 0` fallback exactly.
+    depositAmount: car.depositAmount ?? 0,
+    // Per-km rate charged past the daily distance cap (spec 04 §2.2a) — a
+    // renter needs this before requesting, same reasoning as depositAmount.
+    extraKmRatePerKm: car.extraKmRatePerKm ?? 0,
   };
 }
 
