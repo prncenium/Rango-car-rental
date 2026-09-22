@@ -121,7 +121,7 @@ export function ContactPage() {
                   <Input
                     label="Your name"
                     required
-                    placeholder="Prince"
+                    placeholder="Prncenium"
                     errorText={errors.name?.message}
                     {...register('name')}
                   />
