@@ -198,6 +198,7 @@ export function ContactPage() {
                     <p className="text-caption font-medium uppercase tracking-wide text-neutral-500">Call us</p>
                     <p className="text-body-md text-neutral-900">+91 91066 18685</p>
                     <p className="text-body-md text-neutral-900">+91 92658 08891</p>
+                    <p className="text-body-md text-neutral-900">+91 81600 81473</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
