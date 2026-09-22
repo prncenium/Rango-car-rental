@@ -56,6 +56,14 @@ const UPDATES: Update[] = [
 
 const NEW_LOCATION = { city: 'Gandhinagar, Ahmedabad', state: 'Gujarat' };
 
+// Matches by CURRENT make/model (post the UPDATES pass above, since this
+// script is safe to re-run — Brezza and Grand Vitara's `model` field is
+// already at its final value by the time this runs).
+const MAKE_RENAMES: { make: string; model: string; newMake: string }[] = [
+  { make: 'Maruti Suzuki', model: 'Brezza', newMake: 'Maruti' },
+  { make: 'Maruti Suzuki', model: 'Grand Vitara', newMake: 'Maruti' },
+];
+
 async function main() {
   await connectDb();
 
@@ -81,6 +89,18 @@ async function main() {
   // whole fleet, not just the 6 cars with mileage/name edits.
   const { modifiedCount } = await Car.updateMany({}, { $set: { location: NEW_LOCATION } });
   console.log(`Updated location on ${modifiedCount} car(s) to "${NEW_LOCATION.city}, ${NEW_LOCATION.state}".`);
+
+  for (const rename of MAKE_RENAMES) {
+    const result = await Car.updateOne(
+      { make: rename.make, model: rename.model },
+      { $set: { make: rename.newMake } },
+    );
+    if (result.matchedCount === 0) {
+      console.warn(`SKIP make rename: no car found for ${rename.make} ${rename.model}`);
+    } else {
+      console.log(`Renamed make "${rename.make}" -> "${rename.newMake}" for ${rename.model}`);
+    }
+  }
 
   console.log('\nDone.');
   await mongoose.disconnect();

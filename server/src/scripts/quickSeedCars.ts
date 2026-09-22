@@ -78,8 +78,8 @@ const CARS: CarSpec[] = [
     extraKmRatePerKm: 12,
   },
   {
-    make: 'Maruti Suzuki',
-    model: 'Vitara Brezza',
+    make: 'Maruti',
+    model: 'Brezza',
     year: 2022,
     images: ['https://res.cloudinary.com/gitn9iob/image/upload/v1789891782/IMG_4502.JPG.jpg'],
     fuelType: 'PETROL',
@@ -124,7 +124,7 @@ const CARS: CarSpec[] = [
     extraKmRatePerKm: 15,
   },
   {
-    make: 'Maruti Suzuki',
+    make: 'Maruti',
     model: 'Grand Vitara',
     year: 2023,
     images: ['https://res.cloudinary.com/gitn9iob/image/upload/v1789891783/IMG_4504.JPG.jpg'],
