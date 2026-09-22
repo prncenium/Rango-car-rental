@@ -39,6 +39,10 @@ interface ToastMessage {
 
 export function ContactPage() {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  // Toasts sit bottom-right and auto-dismiss in 6s — easy to miss on mobile
+  // (e.g. behind the on-screen keyboard). This inline banner stays in the
+  // form itself so the confirmation is unmissable regardless of viewport.
+  const [formNotice, setFormNotice] = useState<{ variant: 'success' | 'danger'; text: string } | null>(null);
 
   function pushToast(variant: ToastMessage['variant'], text: string) {
     const id = Date.now();
@@ -54,9 +58,12 @@ export function ContactPage() {
   } = useForm<ContactFormValues>({ resolver: zodResolver(contactDto) });
 
   const onSubmit = handleSubmit(async (values) => {
+    setFormNotice(null);
     try {
       await sendContactMessage(values);
-      pushToast('success', "Message sent. We'll get back to you within 2-4 hours.");
+      const text = "Message sent. We'll get back to you within 2-4 hours.";
+      pushToast('success', text);
+      setFormNotice({ variant: 'success', text });
       reset();
     } catch (error) {
       const message =
@@ -64,6 +71,7 @@ export function ContactPage() {
           ? 'Email sending is temporarily unavailable. Please call or email us directly.'
           : "Couldn't send your message. Please try again.";
       pushToast('danger', message);
+      setFormNotice({ variant: 'danger', text: message });
     }
   });
 
@@ -150,6 +158,12 @@ export function ContactPage() {
                   errorText={errors.message?.message}
                   {...register('message')}
                 />
+
+                {formNotice && (
+                  <Toast variant={formNotice.variant} onDismiss={() => setFormNotice(null)}>
+                    {formNotice.text}
+                  </Toast>
+                )}
 
                 <Button type="submit" size="lg" isLoading={isSubmitting} className="mt-2 w-full">
                   <SendIcon className="h-4 w-4" />
