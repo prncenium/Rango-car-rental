@@ -94,6 +94,14 @@ export function PublicFooter() {
                 <PhoneIcon className="mt-0.5 h-4 w-4 shrink-0" />
                 +91 91066 18685
               </a>
+              <a href="tel:+919265808891" className="flex items-start gap-2 hover:text-neutral-0">
+                <PhoneIcon className="mt-0.5 h-4 w-4 shrink-0" />
+                +91 92658 08891
+              </a>
+              <a href="tel:+918160081473" className="flex items-start gap-2 hover:text-neutral-0">
+                <PhoneIcon className="mt-0.5 h-4 w-4 shrink-0" />
+                +91 81600 81473
+              </a>
               <span className="flex items-start gap-2">
                 <MapPinIcon className="mt-0.5 h-4 w-4 shrink-0" />
                 Pickup &amp; drop-off: Gandhinagar, Ahmedabad, Gujarat
