@@ -23,8 +23,7 @@ const TESTIMONIALS: Testimonial[] = [
     role: 'First-time renter',
     quote:
       "I was nervous booking a car online, but the listing matched exactly — same scratches, same odometer reading. Whoever approved it actually checked.",
-    image:
-      'https://res.cloudinary.com/gitn9iob/image/upload/v1789642404/WhatsApp_Image_2026-07-28_at_2.33.59_PM.jpg',
+    image: '',
     coords: { x: -300, y: -170, delay: 0.3 },
   },
   {
@@ -33,8 +32,7 @@ const TESTIMONIALS: Testimonial[] = [
     role: 'Weekend road-tripper',
     quote:
       'No app trying to upsell insurance I didn’t need, no surprise charges at pickup. I paid the owner directly, exactly what was listed.',
-    image:
-      'https://res.cloudinary.com/gitn9iob/image/upload/v1789642414/WhatsApp_Image_2026-07-28_at_12.29.00_PM.jpg',
+    image: '',
     coords: { x: 290, y: -160, delay: 0.5 },
   },
   {
@@ -43,8 +41,7 @@ const TESTIMONIALS: Testimonial[] = [
     role: 'Rented for a family trip',
     quote:
       'The handover felt like meeting a person, not scanning a QR code. We walked around the car together before I drove off.',
-    image:
-      'https://res.cloudinary.com/gitn9iob/image/upload/v1789642422/WhatsApp_Image_2026-07-28_at_12.29.01_PM.jpg',
+    image: '',
     coords: { x: 300, y: 230, delay: 0.7 },
   },
   {
@@ -53,7 +50,7 @@ const TESTIMONIALS: Testimonial[] = [
     role: 'Repeat customer',
     quote:
       'Every car I’ve booked through Rango has matched its listing. That consistency is why I keep coming back instead of the usual apps.',
-    image: 'https://res.cloudinary.com/gitn9iob/image/upload/v1789642452/DSCN1202.jpg',
+    image: '',
     coords: { x: -280, y: 220, delay: 0.9 },
   },
 ];
