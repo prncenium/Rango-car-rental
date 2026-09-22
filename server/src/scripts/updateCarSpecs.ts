@@ -52,6 +52,13 @@ const UPDATES: Update[] = [
     model: 'Swift',
     extraLines: ['Mileage - 20-25kmpl'],
   },
+  {
+    // Current make is already 'Maruti' (post the MAKE_RENAMES pass below,
+    // since this script is safe to re-run).
+    make: 'Maruti',
+    model: 'Grand Vitara',
+    extraLines: ['Mileage - 30-35kmpl'],
+  },
 ];
 
 const NEW_LOCATION = { city: 'Gandhinagar, Ahmedabad', state: 'Gujarat' };
