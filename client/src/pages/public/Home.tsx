@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { listPublicCars } from '../../api/cars';
 import { PublicLayout } from './PublicLayout';
 import { VideoHero } from '../../components/public/VideoHero';
+import { HeroLine, HeroReveal } from '../../components/public/HeroLine';
 import { MakingOfSection } from '../../components/public/MakingOfSection';
 import { WhyRentSection } from '../../components/public/WhyRentSection';
 import { TestimonialsSection } from '../../components/public/TestimonialsSection';
@@ -31,32 +32,38 @@ export function HomePage() {
       {/* Hero — spec 05 §3.1 amendment: scroll-linked shrinking video hero */}
       <VideoHero>
         <p className="text-caption font-medium uppercase tracking-wide text-brand-accent">
-          Rental, run properly
+          <HeroLine delayMs={0}>Rental, run properly</HeroLine>
         </p>
         <h1 className="mt-3 max-w-2xl font-display text-display-lg text-neutral-0 sm:text-display-xl">
-          Rent a real car, every listing reviewed by a real admin.
+          <HeroLine delayMs={150}>Rent a real car, every</HeroLine>
+          <HeroLine delayMs={300}>listing reviewed by a</HeroLine>
+          <HeroLine delayMs={450}>real admin.</HeroLine>
         </h1>
         <p className="mt-5 max-w-xl text-body-lg text-neutral-200">
-          Every listing on Rango is approved before it's public and every rental is handed over
-          in person — no online payment, no unvetted cars, no guesswork.
+          <HeroLine delayMs={650}>
+            Every listing on Rango is approved before it's public and every rental is handed over
+            in person — no online payment, no unvetted cars, no guesswork.
+          </HeroLine>
         </p>
-        <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-          <Button
-            variant="primary"
-            size="lg"
-            className="w-full sm:w-auto"
-            onClick={() => navigate('/cars')}
-          >
-            <SearchIcon className="h-4 w-4" />
-            Browse available cars
-          </Button>
-          <Link
-            to={isAuthenticated ? '/account/listings/new' : '/register'}
-            className="inline-flex h-12 w-full items-center justify-center rounded-sm border border-neutral-0/30 px-6 text-body-md text-neutral-0 transition-colors hover:bg-neutral-0/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus-ring focus-visible:outline-offset-2 sm:w-auto"
-          >
-            List your car
-          </Link>
-        </div>
+        <HeroReveal delayMs={800}>
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+            <Button
+              variant="primary"
+              size="lg"
+              className="w-full sm:w-auto"
+              onClick={() => navigate('/cars')}
+            >
+              <SearchIcon className="h-4 w-4" />
+              Browse available cars
+            </Button>
+            <Link
+              to={isAuthenticated ? '/account/listings/new' : '/register'}
+              className="inline-flex h-12 w-full items-center justify-center rounded-sm border border-neutral-0/30 px-6 text-body-md text-neutral-0 transition-colors hover:bg-neutral-0/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus-ring focus-visible:outline-offset-2 sm:w-auto"
+            >
+              List your car
+            </Link>
+          </div>
+        </HeroReveal>
       </VideoHero>
 
       <MakingOfSection />

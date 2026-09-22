@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useIsMobile } from '../../lib/useIsMobile';
 
 // Editorial "making of" gallery — sits between the video hero and "Recently
 // listed" on the homepage, styled after a magazine-style two-column layout
@@ -20,7 +21,15 @@ import { useEffect, useRef, useState } from 'react';
 //      element's transform, each scaled by its own factor, so the whole
 //      section reads as one continuous wave rather than independent,
 //      disconnected wiggles.
-//   3. Scroll lift, same mechanism as VideoHero's shrink (§ its own file):
+//   3. Ambient float: each image bobs up/down on its own continuous cycle,
+//      independent of scroll position or cursor movement — a standalone
+//      requestAnimationFrame timer (`ambientT`, elapsed ms since mount)
+//      feeds a sine wave per image, staggered by period and phase so the
+//      three drift out of sync rather than bobbing in lockstep. Summed into
+//      the same `offsetY` the wave/scroll-lift already produce, so it's one
+//      unified transform rather than a competing CSS animation. Desktop-only
+//      (see `isMobile` gate below), like the other two motion behaviors.
+//   4. Scroll lift, same mechanism as VideoHero's shrink (§ its own file):
 //      `scrollProgress` tracks how far this section has traveled through the
 //      viewport (0 when its top just enters at the bottom, 1 once its bottom
 //      has cleared the top), recomputed on every scroll/resize via
@@ -37,6 +46,17 @@ import { useEffect, useRef, useState } from 'react';
 const TEXT_PARALLAX_FACTOR = 8;
 const SCROLL_LIFT_PX = 60;
 const IMAGE_STRETCH_MAX = 0.08;
+// The wave/scroll-lift transform below is applied to the *image*, not its
+// frame, so the frame's overflow-hidden always has something to clip against
+// — without this, drifting the transformed box itself left its trailing edge
+// uncovered, showing the card's bg-surface-card as a blank strip. This must
+// comfortably exceed the largest possible drift (parallaxFactor * 0.5 for
+// the wave, plus SCROLL_LIFT_PX, plus the reveal's own 8% shrink).
+const IMAGE_OVERSHOOT_PX = 120;
+const AMBIENT_FLOAT_AMPLITUDE_PX = 10;
+// Each image's own cycle length (ms) — deliberately uneven so the three
+// drift out of phase with each other instead of bobbing in lockstep.
+const AMBIENT_FLOAT_PERIOD_MS = [3800, 4400, 5000];
 const GALLERY_IMAGES: {
   url: string;
   alt: string;
@@ -87,6 +107,13 @@ function usePrefersReducedMotion(): boolean {
   return reduced;
 }
 
+// Sine-wave offset for one image's continuous idle bob, in px.
+function ambientFloatOffset(index: number, elapsedMs: number): number {
+  const period = AMBIENT_FLOAT_PERIOD_MS[index] ?? AMBIENT_FLOAT_PERIOD_MS[0]!;
+  const phase = index * (Math.PI / 2);
+  return Math.sin((elapsedMs / period) * Math.PI * 2 + phase) * AMBIENT_FLOAT_AMPLITUDE_PX;
+}
+
 function GalleryImage({
   image,
   index,
@@ -111,19 +138,25 @@ function GalleryImage({
           opacity: revealed ? 1 : 0,
         }}
       >
-        {/* Wave + scroll-lift wrapper — no transition here (see file header):
-            cursor wave and scroll lift both update every frame already. */}
-        <div
-          className={image.aspect}
-          style={{
-            transform: `scale(${revealed ? 1 : 0.92}) translateY(${offsetY}px) scaleY(${1 + stretch})`,
-            transformOrigin: 'bottom',
-          }}
-        >
+        {/* Static frame — sized only by the aspect ratio, never transformed,
+            so it always fully clips the (larger, drifting) image inside it. */}
+        <div className={`relative overflow-hidden ${image.aspect}`}>
           {image.url ? (
-            <img src={image.url} alt={image.alt} className="h-full w-full object-cover" />
+            <img
+              src={image.url}
+              alt={image.alt}
+              className="absolute left-0 w-full object-cover"
+              style={{
+                top: `-${IMAGE_OVERSHOOT_PX}px`,
+                height: `calc(100% + ${IMAGE_OVERSHOOT_PX * 2}px)`,
+                // No transition here (see file header): cursor wave and
+                // scroll lift both update every frame already.
+                transform: `scale(${revealed ? 1 : 0.92}) translateY(${offsetY}px) scaleY(${1 + stretch})`,
+                transformOrigin: 'bottom',
+              }}
+            />
           ) : (
-            <div className="flex h-full w-full items-center justify-center border border-dashed border-border text-caption text-neutral-400">
+            <div className="absolute inset-0 flex items-center justify-center border border-dashed border-border text-caption text-neutral-400">
               Image placeholder
             </div>
           )}
@@ -140,6 +173,28 @@ export function MakingOfSection() {
   const [waveY, setWaveY] = useState(0); // -0.5 .. 0.5, shared by every element's drift
   const [scrollProgress, setScrollProgress] = useState(0); // 0 .. 1 across the section's own scroll traverse
   const reducedMotion = usePrefersReducedMotion();
+  // Wave + scroll-lift + ambient float ("floaty") is desktop-only per this
+  // session's mobile-UI pass — first-view reveal still runs everywhere.
+  const isMobile = useIsMobile();
+  const [ambientT, setAmbientT] = useState(0); // ms elapsed since this ran, drives the idle bob
+
+  // Ambient float — its own free-running timer, not tied to scroll/mouse
+  // events, so the images keep bobbing even at rest.
+  useEffect(() => {
+    if (reducedMotion || isMobile) {
+      setAmbientT(0);
+      return;
+    }
+    let raf = 0;
+    let start: number | null = null;
+    function tick(now: number) {
+      if (start === null) start = now;
+      setAmbientT(now - start);
+      raf = requestAnimationFrame(tick);
+    }
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [reducedMotion, isMobile]);
 
   // First-view reveal, once.
   useEffect(() => {
@@ -167,7 +222,7 @@ export function MakingOfSection() {
   // via requestAnimationFrame rather than a transition, so it tracks the
   // scroll position itself instead of merely reacting to it.
   useEffect(() => {
-    if (reducedMotion) {
+    if (reducedMotion || isMobile) {
       setScrollProgress(0);
       return;
     }
@@ -194,7 +249,7 @@ export function MakingOfSection() {
       window.removeEventListener('resize', onScrollOrResize);
       if (raf) cancelAnimationFrame(raf);
     };
-  }, [reducedMotion]);
+  }, [reducedMotion, isMobile]);
 
   const scrollLift = scrollProgress * SCROLL_LIFT_PX;
   const imageStretch = scrollProgress * IMAGE_STRETCH_MAX;
@@ -202,7 +257,7 @@ export function MakingOfSection() {
   // Cursor wave — normalized against the viewport, not this section's own
   // (much taller) height, so the drift responds to ordinary mouse movement.
   function handleMouseMove(event: React.MouseEvent<HTMLElement>) {
-    if (reducedMotion) return;
+    if (reducedMotion || isMobile) return;
     setWaveY(event.clientY / window.innerHeight - 0.5); // -0.5 .. 0.5
   }
 
@@ -262,7 +317,7 @@ export function MakingOfSection() {
               image={GALLERY_IMAGES[0]!}
               index={0}
               revealed={revealed}
-              offsetY={waveY * GALLERY_IMAGES[0]!.parallaxFactor - scrollLift}
+              offsetY={waveY * GALLERY_IMAGES[0]!.parallaxFactor - scrollLift + ambientFloatOffset(0, ambientT)}
               stretch={imageStretch}
             />
           </div>
@@ -275,7 +330,7 @@ export function MakingOfSection() {
               image={GALLERY_IMAGES[1]!}
               index={1}
               revealed={revealed}
-              offsetY={waveY * GALLERY_IMAGES[1]!.parallaxFactor - scrollLift}
+              offsetY={waveY * GALLERY_IMAGES[1]!.parallaxFactor - scrollLift + ambientFloatOffset(1, ambientT)}
               stretch={imageStretch}
             />
           </div>
@@ -288,7 +343,7 @@ export function MakingOfSection() {
               image={GALLERY_IMAGES[2]!}
               index={2}
               revealed={revealed}
-              offsetY={waveY * GALLERY_IMAGES[2]!.parallaxFactor - scrollLift}
+              offsetY={waveY * GALLERY_IMAGES[2]!.parallaxFactor - scrollLift + ambientFloatOffset(2, ambientT)}
               stretch={imageStretch}
             />
           </div>

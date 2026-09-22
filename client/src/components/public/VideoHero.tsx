@@ -26,6 +26,24 @@ const MAX_RADIUS_PX = 10;
 const MAX_INSET_PX = 32;
 const MIN_HEIGHT_VH = 58;
 
+// Mobile (<640px, the `sm` token per docs/design/03-design-system.md §7) skips the
+// scroll-driven shrink entirely and holds at the shrunk resting size, same as
+// prefers-reduced-motion — tablet/desktop scroll behavior is untouched.
+const MOBILE_QUERY = '(max-width: 639px)';
+
+function useIsMobile(): boolean {
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia(MOBILE_QUERY).matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(MOBILE_QUERY);
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, []);
+  return isMobile;
+}
+
 function usePrefersReducedMotion(): boolean {
   const [reduced, setReduced] = useState(
     () => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
@@ -44,12 +62,20 @@ export function VideoHero({ children }: { children: ReactNode }) {
   const [progress, setProgress] = useState(0);
   const [videoFailed, setVideoFailed] = useState(false);
   const reducedMotion = usePrefersReducedMotion();
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     // Reduced motion: hold at the shrunk resting size, no scroll-driven
     // interpolation and no autoplay (spec 05 §3.1 amendment).
     if (reducedMotion) {
       setProgress(1);
+      return;
+    }
+    // Mobile: hold full-bleed (no inset/radius/height shrink) instead — only
+    // the scroll-driven shrink is removed there, per this session's
+    // mobile-UI pass; autoplay is untouched.
+    if (isMobile) {
+      setProgress(0);
       return;
     }
     let raf = 0;
@@ -74,7 +100,7 @@ export function VideoHero({ children }: { children: ReactNode }) {
       window.removeEventListener('resize', onScrollOrResize);
       if (raf) cancelAnimationFrame(raf);
     };
-  }, [reducedMotion]);
+  }, [reducedMotion, isMobile]);
 
   const inset = progress * MAX_INSET_PX;
   const radius = progress * MAX_RADIUS_PX;

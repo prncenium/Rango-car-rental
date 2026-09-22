@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
+import { HeroLine, HeroReveal } from './HeroLine';
 
 const SLIDE_INTERVAL_MS = 2500;
 
@@ -73,19 +74,39 @@ export function PageHero({
       {/* Legibility scrim — same surface-overlay token regardless of whether
           a background image is present, so contrast never regresses once one is added. */}
       <div className={`absolute inset-0 ${overlayClassName ?? 'bg-neutral-900/55'}`} aria-hidden="true" />
+      {/* Staggered slide-up entrance, desktop only — each field its own
+          HeroLine (masked, for plain text) or HeroReveal (unmasked, for
+          breadcrumb/actions/content, which can hold interactive children a
+          permanent overflow-hidden mask would clip). */}
       <div className="relative mx-auto w-full max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
-        {breadcrumb && <div className="mb-3">{breadcrumb}</div>}
-        {eyebrow && (
-          <p className="text-caption uppercase tracking-wide text-brand-accent lg:text-body-sm">{eyebrow}</p>
+        {breadcrumb && (
+          <HeroReveal delayMs={0}>
+            <div className="mb-3">{breadcrumb}</div>
+          </HeroReveal>
         )}
-        <h1 className="mt-2 font-display text-display-md text-neutral-0 lg:mt-4 lg:text-display-lg">{title}</h1>
-        {subcopy && (
-          <p className="mt-3 max-w-2xl text-body-lg text-neutral-100 lg:mt-5 lg:max-w-3xl lg:text-heading-sm lg:font-normal">
-            {subcopy}
+        {eyebrow && (
+          <p className="text-caption uppercase tracking-wide text-brand-accent lg:text-body-sm">
+            <HeroLine delayMs={100}>{eyebrow}</HeroLine>
           </p>
         )}
-        {actions && <div className="mt-6 flex flex-wrap gap-3 lg:mt-8">{actions}</div>}
-        {content && <div className="mt-8 lg:mt-10">{content}</div>}
+        <h1 className="mt-2 font-display text-display-md text-neutral-0 lg:mt-4 lg:text-display-lg">
+          <HeroLine delayMs={250}>{title}</HeroLine>
+        </h1>
+        {subcopy && (
+          <p className="mt-3 max-w-2xl text-body-lg text-neutral-100 lg:mt-5 lg:max-w-3xl lg:text-heading-sm lg:font-normal">
+            <HeroLine delayMs={400}>{subcopy}</HeroLine>
+          </p>
+        )}
+        {actions && (
+          <HeroReveal delayMs={550}>
+            <div className="mt-6 flex flex-wrap gap-3 lg:mt-8">{actions}</div>
+          </HeroReveal>
+        )}
+        {content && (
+          <HeroReveal delayMs={700}>
+            <div className="mt-8 lg:mt-10">{content}</div>
+          </HeroReveal>
+        )}
       </div>
     </div>
   );

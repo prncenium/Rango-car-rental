@@ -48,9 +48,9 @@ export function WhyRentSection() {
           </h2>
         </div>
 
-        <div className="mt-10 grid grid-cols-1 overflow-hidden rounded-lg border border-border shadow-sm sm:grid-cols-2">
+        <div className="mt-8 grid grid-cols-1 overflow-hidden rounded-lg border border-border shadow-sm sm:mt-10 sm:grid-cols-2">
           {/* Left — fixed image, never rotates */}
-          <div className="relative h-[45.9rem]">
+          <div className="relative h-64 sm:h-[45.9rem]">
             {WHY_RENT_IMAGE_URL ? (
               <img
                 src={WHY_RENT_IMAGE_URL}
@@ -65,7 +65,7 @@ export function WhyRentSection() {
           </div>
 
           {/* Right — copy rotates through WHY_RENT_SLIDES every 2s */}
-          <div className="relative flex h-[45.9rem] flex-col justify-center overflow-hidden bg-surface-sunken px-8 py-8 sm:px-12">
+          <div className="relative flex flex-col justify-center overflow-hidden bg-surface-sunken px-6 py-8 sm:h-[45.9rem] sm:px-12">
             <AnimatePresence mode="wait">
               <motion.div
                 key={slide.title}
@@ -74,15 +74,15 @@ export function WhyRentSection() {
                 exit={{ opacity: 0, y: reducedMotion ? 0 : -16 }}
                 transition={{ duration: 0.5, ease: 'easeOut' }}
               >
-                <span className="font-display text-heading-lg text-brand-accent/40">
+                <span className="font-display text-heading-md text-brand-accent/40 sm:text-heading-lg">
                   0{active + 1}
                 </span>
-                <h3 className="mt-2 font-display text-heading-md text-neutral-900">{slide.title}</h3>
-                <p className="mt-4 max-w-sm text-body-lg text-neutral-600">{slide.body}</p>
+                <h3 className="mt-1 font-display text-heading-md text-neutral-900 sm:mt-2">{slide.title}</h3>
+                <p className="mt-3 max-w-sm text-body-md text-neutral-600 sm:mt-4 sm:text-body-lg">{slide.body}</p>
               </motion.div>
             </AnimatePresence>
 
-            <div className="mt-8 flex gap-2">
+            <div className="mt-6 flex gap-2 sm:mt-8">
               {WHY_RENT_SLIDES.map((s, i) => (
                 <span
                   key={s.title}

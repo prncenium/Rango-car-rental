@@ -78,6 +78,12 @@ export function SearchPage() {
     setPage(1);
   }, [isMobile]);
 
+  // Pagination changes the result set in place (no route change), so nothing
+  // else scrolls the viewport back up — do it explicitly.
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [page]);
+
   const debouncedFilters = useDebouncedValue(filters, 350);
   const query = useMemo(
     () => toQuery(debouncedFilters, sort, page, limit),

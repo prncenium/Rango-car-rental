@@ -53,7 +53,8 @@ export function ScrollZoomHero({ imageUrl, imageAlt, eyebrow, heading, body, act
 
   const copy = (eyebrow || heading || body) && (
     <div className="absolute inset-0 flex items-center">
-      <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
+      {/* Slide-up entrance, desktop only. */}
+      <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 motion-safe:sm:animate-hero-slide-up">
         {eyebrow && (
           <p className="text-body-md font-medium uppercase tracking-[0.2em] text-brand-accent">{eyebrow}</p>
         )}

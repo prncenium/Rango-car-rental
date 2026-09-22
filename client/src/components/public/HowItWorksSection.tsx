@@ -68,7 +68,7 @@ export function HowItWorksSection() {
           </h2>
         </div>
 
-        <div className="relative mt-10 overflow-hidden rounded-lg border border-border shadow-sm">
+        <div className="relative mt-8 overflow-hidden rounded-lg border border-border shadow-sm sm:mt-10">
           <AnimatePresence mode="wait">
             <motion.div
               key={current}
@@ -80,7 +80,7 @@ export function HowItWorksSection() {
             >
               {/* Left — step number, title, background image */}
               <div
-                className="relative flex h-[28rem] w-full flex-col justify-center overflow-hidden bg-neutral-900 p-10 sm:h-[45.9rem] sm:w-1/2 sm:p-16"
+                className="relative flex h-64 w-full flex-col justify-end overflow-hidden bg-neutral-900 p-6 sm:h-[45.9rem] sm:w-1/2 sm:justify-center sm:p-16"
                 style={
                   slide.leftImage
                     ? {
@@ -92,18 +92,18 @@ export function HowItWorksSection() {
                 }
               >
                 <div className="relative z-10 whitespace-pre-line">
-                  <span className="font-display text-heading-lg text-neutral-0/50">
+                  <span className="font-display text-heading-md text-neutral-0/50 sm:text-heading-lg">
                     {slide.step}
                   </span>
-                  <h3 className="mt-2 font-display text-display-md text-neutral-0">
+                  <h3 className="mt-1 font-display text-heading-lg text-neutral-0 sm:mt-2 sm:text-display-md">
                     {slide.title}
                   </h3>
                 </div>
               </div>
 
               {/* Right — supporting image + body copy */}
-              <div className="flex h-[28rem] w-full flex-col justify-center bg-surface-sunken p-10 sm:h-[45.9rem] sm:w-1/2 sm:p-16">
-                <div className="h-48 w-full overflow-hidden rounded-md sm:h-[26rem]">
+              <div className="flex w-full flex-col justify-center bg-surface-sunken px-6 pb-20 pt-6 sm:h-[45.9rem] sm:w-1/2 sm:p-16">
+                <div className="h-40 w-full overflow-hidden rounded-md sm:h-[26rem]">
                   {slide.rightImage ? (
                     <img
                       src={slide.rightImage}
@@ -116,7 +116,7 @@ export function HowItWorksSection() {
                     </div>
                   )}
                 </div>
-                <p className="mt-6 max-w-md text-body-lg text-neutral-600">
+                <p className="mt-4 max-w-md text-body-md text-neutral-600 sm:mt-6 sm:text-body-lg">
                   {slide.rightBody}
                 </p>
               </div>

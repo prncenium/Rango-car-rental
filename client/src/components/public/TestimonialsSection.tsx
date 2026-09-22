@@ -116,7 +116,17 @@ export function TestimonialsSection() {
           </motion.p>
         </motion.div>
 
-        <div className="relative mt-8 flex h-[560px] w-full max-w-[880px] origin-top scale-[0.5] transform-gpu items-center justify-center sm:scale-[0.65] md:scale-[0.85] lg:mt-16 lg:scale-100">
+        {/* `scale()` only shrinks the *painted* content — the 560px layout box
+            stays full height regardless, which is exactly right at sm+
+            (nothing to fix there) but leaves a large dead-space gap below the
+            visibly-smaller mobile content. This wrapper (holding the same
+            mt-8/lg:mt-16 margin the box used to carry directly — moved here
+            so overflow-hidden crops correctly) caps height to the box's
+            actual scaled content on mobile only; at `sm` and up it's inert
+            (auto height, visible overflow), so the orbit picker itself,
+            unchanged below, renders exactly as before. */}
+        <div className="mt-8 h-[330px] overflow-hidden sm:h-auto sm:overflow-visible lg:mt-16">
+          <div className="relative flex h-[560px] w-full max-w-[880px] origin-top scale-[0.5] transform-gpu items-center justify-center sm:scale-[0.65] md:scale-[0.85] lg:scale-100">
           {/* Orbit rings — purely decorative geometry, matches the flatter, engineered mood over soft blobs. */}
           <div className="absolute left-1/2 top-1/2 h-[480px] w-[480px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-dashed border-border" />
           <div className="absolute left-1/2 top-1/2 h-[680px] w-[680px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-dashed border-border" />
@@ -205,6 +215,7 @@ export function TestimonialsSection() {
                 </div>
               </motion.div>
             </AnimatePresence>
+          </div>
           </div>
         </div>
       </div>
