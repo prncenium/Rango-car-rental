@@ -143,7 +143,7 @@ const DEFAULTS = {
   seats: 5,
   mileageKm: 32000,
   rentalPricePerDay: 3500,
-  city: 'Vadodara',
+  city: 'Gandhinagar, Ahmedabad',
   state: 'Gujarat',
 };
 

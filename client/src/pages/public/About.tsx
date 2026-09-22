@@ -198,7 +198,7 @@ export function ContactPage() {
               <ul className="mt-5 flex flex-col gap-4">
                 <li>
                   <p className="text-body-md font-semibold text-neutral-900">India</p>
-                  <p className="text-body-sm text-neutral-600">Vadodara, Gujarat</p>
+                  <p className="text-body-sm text-neutral-600">Gandhinagar, Ahmedabad, Gujarat</p>
                 </li>
               </ul>
 

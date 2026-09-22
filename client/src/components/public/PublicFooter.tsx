@@ -96,7 +96,7 @@ export function PublicFooter() {
               </a>
               <span className="flex items-start gap-2">
                 <MapPinIcon className="mt-0.5 h-4 w-4 shrink-0" />
-                Pickup &amp; drop-off: Vadodara, Gujarat
+                Pickup &amp; drop-off: Gandhinagar, Ahmedabad, Gujarat
               </span>
             </div>
           </div>
