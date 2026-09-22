@@ -187,10 +187,6 @@ export function CarDetailPage() {
                   </div>
                 </div>
                 <div>
-                  <dt className="text-neutral-500">Mileage</dt>
-                  <dd className="text-neutral-800">{car.mileageKm.toLocaleString('en-IN')} km</dd>
-                </div>
-                <div>
                   <dt className="text-neutral-500">Distance cap</dt>
                   <dd className="text-neutral-800">
                     300 km/day{car.extraKmRatePerKm ? `, then ₹${car.extraKmRatePerKm}/km` : ''}
