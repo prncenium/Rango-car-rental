@@ -22,6 +22,27 @@ const FUEL_LABEL: Record<string, string> = {
   CNG: 'CNG',
 };
 
+// Mileage (fuel efficiency, e.g. "20-25kmpl") and a fuller fuel note (e.g.
+// "CNG+ petrol") aren't their own DB fields — they're supplied as
+// "Mileage - ..." / "Fuel - ..." lines within the free-text description
+// (server/src/scripts/updateCarSpecs.ts). Pulled out here so they render as
+// their own Specs entries instead of staying buried in the description
+// paragraph; the matched lines are stripped from what's shown below so they
+// aren't duplicated.
+function extractSpecLine(description: string | undefined, label: string): string | undefined {
+  const match = description?.split('\n').find((line) => new RegExp(`^${label}\\s*-\\s*`, 'i').test(line.trim()));
+  return match?.replace(new RegExp(`^${label}\\s*-\\s*`, 'i'), '').trim();
+}
+
+function stripSpecLines(description: string | undefined, labels: string[]): string | undefined {
+  const remaining = description
+    ?.split('\n')
+    .filter((line) => !labels.some((label) => new RegExp(`^${label}\\s*-\\s*`, 'i').test(line.trim())))
+    .join('\n')
+    .trim();
+  return remaining || undefined;
+}
+
 function currentMonthStart(): string {
   const t = todayIso();
   return monthStartIso(Number(t.slice(0, 4)), Number(t.slice(5, 7)) - 1);
@@ -104,6 +125,9 @@ export function CarDetailPage() {
   }
 
   const images = car.images.length > 0 ? car.images : [];
+  const mileageText = extractSpecLine(car.description, 'Mileage');
+  const fuelNote = extractSpecLine(car.description, 'Fuel');
+  const remainingDescription = stripSpecLines(car.description, ['Mileage', 'Fuel']);
 
   return (
     <PublicLayout>
@@ -176,7 +200,7 @@ export function CarDetailPage() {
                   <FuelIcon className="h-4 w-4 text-neutral-400" />
                   <div>
                     <dt className="text-neutral-500">Fuel</dt>
-                    <dd className="text-neutral-800">{FUEL_LABEL[car.fuelType] ?? car.fuelType}</dd>
+                    <dd className="text-neutral-800">{fuelNote ?? FUEL_LABEL[car.fuelType] ?? car.fuelType}</dd>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -186,6 +210,12 @@ export function CarDetailPage() {
                     <dd className="text-neutral-800">{car.seats}</dd>
                   </div>
                 </div>
+                {mileageText && (
+                  <div>
+                    <dt className="text-neutral-500">Mileage</dt>
+                    <dd className="text-neutral-800">{mileageText}</dd>
+                  </div>
+                )}
                 <div>
                   <dt className="text-neutral-500">Distance cap</dt>
                   <dd className="text-neutral-800">
@@ -201,10 +231,10 @@ export function CarDetailPage() {
               </dl>
             </section>
 
-            {car.description && (
+            {remainingDescription && (
               <section className="mt-8">
                 <h2 className="font-display text-heading-sm text-neutral-900">Description</h2>
-                <p className="mt-2 whitespace-pre-line text-body-md text-neutral-700">{car.description}</p>
+                <p className="mt-2 whitespace-pre-line text-body-md text-neutral-700">{remainingDescription}</p>
               </section>
             )}
 
