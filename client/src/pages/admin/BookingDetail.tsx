@@ -13,6 +13,7 @@ import { ApiError } from '../../lib/apiClient';
 import {
   adminGetBooking,
   cancelBooking,
+  clearNoShow,
   confirmBooking,
   confirmOfflinePayment,
   downloadBookingAgreement,
@@ -20,12 +21,23 @@ import {
   markBookingReturned,
   markNoShow,
   rejectBooking,
+  terminateBooking,
   type AdminBookingDetail,
 } from '../../api/admin';
 import { bookingStatusMeta } from '../../lib/statusMeta';
 import { todayIso } from '../../lib/dateUtc';
 
-type ActionKind = 'confirm' | 'reject' | 'cancel' | 'payment' | 'activate' | 'complete' | 'noShow' | null;
+type ActionKind =
+  | 'confirm'
+  | 'reject'
+  | 'cancel'
+  | 'payment'
+  | 'activate'
+  | 'complete'
+  | 'noShow'
+  | 'terminate'
+  | 'clearNoShow'
+  | null;
 
 export function AdminBookingDetailPage() {
   return (
@@ -54,6 +66,7 @@ const GUARD_MESSAGES: Record<string, string> = {
   guardStatusCancellable: 'This rental is already active — cancel is not available; it must be completed instead.',
   guardBookingExpectsPayment: "This booking's status doesn't accept a payment right now.",
   guardNotOverpaying: 'This amount would exceed what is owed for this purpose.',
+  guardEffectiveFromValid: "Termination date must be between this rental's start date and today.",
 };
 
 function errorToastText(err: unknown): string {
@@ -183,6 +196,20 @@ export function BookingDetail() {
     onError: onMutationError,
   });
 
+  const terminateMutation = useMutation({
+    mutationFn: (input: { reason: string; effectiveFrom?: string }) => terminateBooking(bookingId!, input),
+    onMutate: () => onMutate({ status: 'TERMINATED' }),
+    onSuccess: () => onMutationSuccess('Rental terminated early.'),
+    onError: onMutationError,
+  });
+
+  const clearNoShowMutation = useMutation({
+    mutationFn: (reason: string) => clearNoShow(bookingId!, reason),
+    onMutate: () => onMutate({ noShowCleared: true }),
+    onSuccess: () => onMutationSuccess('No-show cleared. This renter can book again.'),
+    onError: onMutationError,
+  });
+
   if (detailQuery.isLoading) {
     return (
       <div className="space-y-4">
@@ -217,12 +244,22 @@ export function BookingDetail() {
   const canActivate = booking.status === 'CONFIRMED';
   const canComplete = booking.status === 'ACTIVE';
   const canMarkNoShow = booking.status === 'CONFIRMED';
+  const canTerminate = booking.status === 'ACTIVE';
+  const canClearNoShow = booking.status === 'NO_SHOW' && !booking.noShowCleared;
   // Mirrors server/src/services/booking.service.ts's AGREEMENT_ELIGIBLE_STATUSES.
   const canDownloadAgreement = (
     ['REQUESTED', 'CONFIRMED', 'CANCELLATION_REQUESTED', 'ACTIVE', 'COMPLETED', 'TERMINATED', 'NO_SHOW'] as string[]
   ).includes(booking.status);
   const noActionsAvailable =
-    !canConfirm && !canReject && !canCancel && !canRecordPayment && !canActivate && !canComplete && !canMarkNoShow;
+    !canConfirm &&
+    !canReject &&
+    !canCancel &&
+    !canRecordPayment &&
+    !canActivate &&
+    !canComplete &&
+    !canMarkNoShow &&
+    !canTerminate &&
+    !canClearNoShow;
 
   return (
     <div>
@@ -317,6 +354,17 @@ export function BookingDetail() {
           {booking.noShowReason && (
             <p className="rounded-sm bg-status-warning-bg px-3 py-2 text-body-sm text-status-warning-fg">
               No-show note: "{booking.noShowReason}"
+              {booking.noShowCleared && booking.noShowClearedReason && (
+                <>
+                  <br />
+                  Cleared: "{booking.noShowClearedReason}"
+                </>
+              )}
+            </p>
+          )}
+          {booking.terminationReason && (
+            <p className="rounded-sm bg-status-danger-bg px-3 py-2 text-body-sm text-status-danger-fg">
+              Terminated early: "{booking.terminationReason}"
             </p>
           )}
         </div>
@@ -363,6 +411,16 @@ export function BookingDetail() {
                 title={!startDatePassed ? "This booking's start date hasn't passed yet" : undefined}
               >
                 Mark no-show
+              </Button>
+            )}
+            {canClearNoShow && (
+              <Button variant="secondary" className="w-full" onClick={() => setActiveAction('clearNoShow')}>
+                Clear no-show
+              </Button>
+            )}
+            {canTerminate && (
+              <Button variant="danger" className="w-full" onClick={() => setActiveAction('terminate')}>
+                End rental early
               </Button>
             )}
             {canCancel && (
@@ -425,6 +483,25 @@ export function BookingDetail() {
         confirmLabel="Mark no-show"
         confirmVariant="danger"
         isSubmitting={noShowMutation.isPending}
+      />
+
+      <ConfirmReasonModal
+        open={activeAction === 'clearNoShow'}
+        onClose={() => setActiveAction(null)}
+        onConfirm={(reason) => clearNoShowMutation.mutate(reason)}
+        title="Clear this no-show?"
+        description={`This lifts the block on ${booking.renter.name} making new booking requests. This booking stays marked NO_SHOW.`}
+        reasonLabel="Reason"
+        confirmLabel="Clear no-show"
+        isSubmitting={clearNoShowMutation.isPending}
+      />
+
+      <TerminateBookingModal
+        open={activeAction === 'terminate'}
+        onClose={() => setActiveAction(null)}
+        onSubmit={(input) => terminateMutation.mutate(input)}
+        isSubmitting={terminateMutation.isPending}
+        startDate={booking.startDate}
       />
 
       <RecordPaymentModal
@@ -677,6 +754,81 @@ function ActivateBookingModal({
           }
         >
           Confirm handover
+        </Button>
+      </ModalFooter>
+    </Modal>
+  );
+}
+
+function TerminateBookingModal({
+  open,
+  onClose,
+  onSubmit,
+  isSubmitting,
+  startDate,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSubmit: (input: { reason: string; effectiveFrom?: string }) => void;
+  isSubmitting: boolean;
+  startDate: string;
+}) {
+  const [effectiveFrom, setEffectiveFrom] = useState('');
+  const [reason, setReason] = useState('');
+
+  function handleClose() {
+    setEffectiveFrom('');
+    setReason('');
+    onClose();
+  }
+
+  const min = startDate.slice(0, 10);
+  const max = todayIso();
+  const canSubmit = reason.trim().length > 0 && !isSubmitting;
+
+  return (
+    <Modal open={open} onClose={handleClose} title="End this rental early?">
+      <ModalBody>
+        <p className="text-body-sm text-neutral-600">
+          Use this when the car has come back (or the rental is being cut short) before its original end date. This
+          releases the car's remaining booked days back onto the calendar from the date chosen below.
+        </p>
+        <div className="mt-4 space-y-3">
+          <Input
+            label="Effective from (optional — defaults to today)"
+            type="date"
+            min={min}
+            max={max}
+            value={effectiveFrom}
+            onChange={(e) => setEffectiveFrom(e.target.value)}
+            helperText={`Must be between the rental's start date (${min}) and today (${max})`}
+          />
+          <Textarea
+            label="Reason (required)"
+            required
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            rows={3}
+            autoFocus
+          />
+        </div>
+      </ModalBody>
+      <ModalFooter>
+        <Button variant="secondary" onClick={handleClose} disabled={isSubmitting}>
+          Cancel
+        </Button>
+        <Button
+          variant="danger"
+          disabled={!canSubmit}
+          isLoading={isSubmitting}
+          onClick={() =>
+            onSubmit({
+              reason: reason.trim(),
+              ...(effectiveFrom.trim() ? { effectiveFrom: effectiveFrom.trim() } : {}),
+            })
+          }
+        >
+          End rental
         </Button>
       </ModalFooter>
     </Modal>

@@ -249,9 +249,13 @@ export interface AdminBookingListItem {
   status: BookingStatus;
   rejectionReason?: string;
   cancellationReason?: string;
+  terminatedAt?: string;
   terminationReason?: string;
+  noShowAt?: string;
   noShowReason?: string;
   noShowCleared: boolean;
+  noShowClearedAt?: string;
+  noShowClearedReason?: string;
   createdAt: string;
   excessKm?: number;
   excessKmChargeAmount?: number;
@@ -338,6 +342,23 @@ export function cancelBooking(bookingId: string, reason: string): Promise<AdminB
 // regardless of `reasonRequired`).
 export function markNoShow(bookingId: string, reason: string): Promise<AdminBookingDetail> {
   return apiFetch<AdminBookingDetail>(`/admin/bookings/${bookingId}/no-show`, { method: 'POST', body: { reason } });
+}
+
+export interface TerminateBookingInput {
+  reason: string;
+  effectiveFrom?: string | undefined; // YYYY-MM-DD, bounded server-side to [startDate, today]
+}
+
+// POST /api/admin/bookings/:bookingId/terminate — ends an ACTIVE rental
+// early. reason is server-required; effectiveFrom defaults to today if omitted.
+export function terminateBooking(bookingId: string, input: TerminateBookingInput): Promise<AdminBookingDetail> {
+  return apiFetch<AdminBookingDetail>(`/admin/bookings/${bookingId}/terminate`, { method: 'POST', body: input });
+}
+
+// POST /api/admin/bookings/:bookingId/clear-no-show — lifts a no-show flag
+// without touching Booking.status. reason is server-required.
+export function clearNoShow(bookingId: string, reason: string): Promise<AdminBookingDetail> {
+  return apiFetch<AdminBookingDetail>(`/admin/bookings/${bookingId}/clear-no-show`, { method: 'POST', body: { reason } });
 }
 
 export interface ConfirmOfflinePaymentInput {
