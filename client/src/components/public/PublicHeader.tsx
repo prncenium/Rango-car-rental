@@ -62,6 +62,9 @@ export function PublicHeader() {
           <NavLink to="/cars" className={navLinkClass}>
             Browse cars
           </NavLink>
+          <NavLink to="/about" className={navLinkClass}>
+            About us
+          </NavLink>
           <div className="group relative">
             <button
               type="button"
@@ -161,6 +164,13 @@ export function PublicHeader() {
               className="rounded-sm px-2 py-2.5 text-body-md text-neutral-0/85 hover:bg-neutral-0/10"
             >
               Browse cars
+            </Link>
+            <Link
+              to="/about"
+              onClick={() => setOpen(false)}
+              className="rounded-sm px-2 py-2.5 text-body-md text-neutral-0/85 hover:bg-neutral-0/10"
+            >
+              About us
             </Link>
             <div className="px-2 py-2.5">
               <span className="text-body-md text-neutral-0/85">Service</span>

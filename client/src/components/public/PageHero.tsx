@@ -30,6 +30,7 @@ export function PageHero({
   backgroundImages,
   actions,
   content,
+  overlayClassName,
 }: {
   /** Rendered above eyebrow/title, e.g. a "Cars / Model name" trail. */
   breadcrumb?: ReactNode;
@@ -42,6 +43,8 @@ export function PageHero({
   actions?: ReactNode;
   /** Freeform block rendered below actions (e.g. a quick-search card) — its own layout, no wrapper styling. */
   content?: ReactNode;
+  /** Overrides the default `bg-neutral-900/55` legibility scrim — for a background photo dark enough on its own that the default scrim would hide it entirely. */
+  overlayClassName?: string;
 }) {
   const slides = backgroundImages && backgroundImages.length > 0 ? backgroundImages : backgroundImage ? [backgroundImage] : [];
   const reducedMotion = usePrefersReducedMotion();
@@ -69,7 +72,7 @@ export function PageHero({
       ))}
       {/* Legibility scrim — same surface-overlay token regardless of whether
           a background image is present, so contrast never regresses once one is added. */}
-      <div className="absolute inset-0 bg-neutral-900/55" aria-hidden="true" />
+      <div className={`absolute inset-0 ${overlayClassName ?? 'bg-neutral-900/55'}`} aria-hidden="true" />
       <div className="relative mx-auto w-full max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
         {breadcrumb && <div className="mb-3">{breadcrumb}</div>}
         {eyebrow && (

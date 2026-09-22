@@ -35,6 +35,9 @@ export function PublicFooter() {
               <Link to="/cars" className={linkClass}>
                 Browse cars
               </Link>
+              <Link to="/about" className={linkClass}>
+                About us
+              </Link>
               <Link to="/about/contact" className={linkClass}>
                 Contact us
               </Link>
@@ -65,15 +68,15 @@ export function PublicFooter() {
               Legal
             </h3>
             <nav className="mt-4 flex flex-col gap-3">
-              <button type="button" onClick={() => setTermsOpen(true)} className={`${linkClass} text-left`}>
+              <Link to="/legal/terms" className={linkClass}>
                 Terms &amp; Conditions
-              </button>
-              <button type="button" onClick={() => setTermsOpen(true)} className={`${linkClass} text-left`}>
+              </Link>
+              <Link to="/legal/safety-rules" className={linkClass}>
                 Safety rules &amp; guidelines
-              </button>
-              <span className="text-body-sm text-neutral-0/40" aria-disabled="true">
-                Privacy Policy (coming soon)
-              </span>
+              </Link>
+              <Link to="/legal/privacy" className={linkClass}>
+                Privacy Policy
+              </Link>
             </nav>
           </div>
 

@@ -5,6 +5,9 @@ import { RegisterPage } from './pages/auth/Register';
 import { ResetPasswordPage } from './pages/auth/ResetPassword';
 import { HomePage } from './pages/public/Home';
 import { ContactPage } from './pages/public/About';
+import { AboutUsPage } from './pages/public/AboutUs';
+import { TermsPage, SafetyRulesPage } from './pages/public/LegalDocument';
+import { PrivacyPolicyPage } from './pages/public/PrivacyPolicy';
 import { SearchPage } from './pages/public/Search';
 import { CarDetailPage } from './pages/public/CarDetail';
 import { BookingRequestPage } from './pages/public/BookingRequest';
@@ -29,8 +32,11 @@ export function App() {
       <Routes>
       <Route path="/" element={<HomePage />} />
       <Route path="/cars" element={<SearchPage />} />
-      <Route path="/about" element={<Navigate to="/about/contact" replace />} />
+      <Route path="/about" element={<AboutUsPage />} />
       <Route path="/about/contact" element={<ContactPage />} />
+      <Route path="/legal/terms" element={<TermsPage />} />
+      <Route path="/legal/safety-rules" element={<SafetyRulesPage />} />
+      <Route path="/legal/privacy" element={<PrivacyPolicyPage />} />
       <Route path="/cars/:carId" element={<CarDetailPage />} />
       <Route path="/cars/:carId/request" element={<BookingRequestPage />} />
       <Route path="/login" element={<LoginPage />} />
